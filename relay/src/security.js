@@ -1,6 +1,6 @@
 const rateLimit = require('express-rate-limit');
 
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'https://passr.dev,http://localhost:5173')
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'https://passr.dev,http://localhost:5173,http://localhost:5174')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);

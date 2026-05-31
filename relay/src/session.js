@@ -23,7 +23,7 @@ function deriveNumericCode(sessionId) {
   return String(num).padStart(6, '0');
 }
 
-function createSession() {
+function createSession(fileCount = 0) {
   const id = generateSessionId();
   const token = generateToken();
   const now = Date.now();
@@ -35,7 +35,7 @@ function createSession() {
     expiresAt: now + SESSION_TTL_MS,
     initiatorSocket: null,
     joinerSocket: null,
-    fileCount: 0,
+    fileCount,
   };
   sessions.set(id, session);
   return session;

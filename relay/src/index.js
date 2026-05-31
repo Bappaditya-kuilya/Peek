@@ -31,7 +31,8 @@ app.use((req, res, next) => {
 });
 
 app.post('/session', sessionCreateLimiter, (req, res) => {
-  const session = createSession();
+  const fileCount = Number.isFinite(req.body?.fileCount) ? Math.max(0, Number(req.body.fileCount)) : 0;
+  const session = createSession(fileCount);
   res.json({
     sessionId: session.id,
     token: session.token,
