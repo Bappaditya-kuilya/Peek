@@ -1,3 +1,5 @@
+import { sanitizeFilename, safeBaseName } from './sanitize.js';
+
 const RELAY_HTTP_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : 'https://passr.dev/api';
 const RELAY_WS_URL = window.location.hostname === 'localhost' ? 'ws://localhost:3000' : 'wss://passr.dev/api';
 const IV_LENGTH = 12;
@@ -12,6 +14,7 @@ const decoder = new TextDecoder();
 const state = {
   activity: [],
   dataChannel: null,
+  decryptError: false,
   filesToSend: [],
   incomingFiles: new Map(),
   joined: false,
@@ -94,6 +97,19 @@ function render() {
     return;
   }
 
+  if (state.decryptError) {
+    app.innerHTML = html`
+      <div class="screen stack-lg">
+        <div class="screen-header"><div class="wordmark">passr</div></div>
+        <div class="stack-md">
+          <h1 class="title">Couldn't decrypt the files</h1>
+          <div class="copy">The link may be incomplete or corrupted. Ask the sender to share the full link again.</div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
   if (state.joinInfo.mode === 'code-entry') {
     app.innerHTML = html`
       <div class="screen stack-lg">
@@ -153,7 +169,7 @@ function render() {
         <div class="row-left">
           ${fileIconSvg(file.type?.startsWith('image/') ? 'image' : 'doc')}
           <div class="row-main">
-            <span class="file-name">${file.name}</span>
+            <span class="file-name">${sanitizeFilename(file.name)}</span>
             <span class="file-size">${formatBytes(file.size)}</span>
           </div>
         </div>
@@ -380,8 +396,26 @@ async function sendFiles(files) {
 }
 
 async function handleBinaryMessage(buffer) {
-  const decrypted = await decryptChunk(state.key, buffer);
-  const packet = decodePacket(decrypted);
+  let decrypted;
+  try {
+    decrypted = await decryptChunk(state.key, buffer);
+  } catch {
+    // Wrong key (a truncated or tampered link) or a corrupted packet. The
+    // AES-GCM auth tag rejected it. Fail gracefully — show a clear message
+    // instead of throwing and leaving a blank, stuck screen.
+    state.decryptError = true;
+    render();
+    return;
+  }
+
+  let packet;
+  try {
+    packet = decodePacket(decrypted);
+  } catch {
+    state.decryptError = true;
+    render();
+    return;
+  }
 
   if (packet.type === 'manifest') {
     state.incomingFiles.clear();
@@ -517,7 +551,7 @@ function bindReceiverActions() {
       const url = URL.createObjectURL(file.blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = file.name;
+      anchor.download = safeBaseName(file.name);
       anchor.click();
       URL.revokeObjectURL(url);
       await sendEncryptedPacket(encodeDownloadNotice(fileId));
@@ -544,7 +578,7 @@ function bindReceiverActions() {
     if (!files.length) return;
     const zipModule = await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm');
     const zip = new zipModule.default();
-    files.forEach((file) => zip.file(file.name, file.blob));
+    files.forEach((file) => zip.file(safeBaseName(file.name), file.blob));
     const blob = await zip.generateAsync({
       type: 'blob',
       compression: 'DEFLATE',

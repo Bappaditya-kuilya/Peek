@@ -33,6 +33,8 @@ function createSession(fileCount = 0) {
     numericCode: deriveNumericCode(id),
     createdAt: now,
     expiresAt: now + SESSION_TTL_MS,
+    initiatorJoinedAt: null,
+    joinerJoinedAt: null,
     initiatorSocket: null,
     joinerSocket: null,
     fileCount,
@@ -52,6 +54,46 @@ function updateSession(sessionId, patch) {
   }
   Object.assign(session, patch);
   return session;
+}
+
+function canJoinRole(session, role) {
+  if (!session) {
+    return false;
+  }
+
+  if (role === 'initiator') {
+    return !session.initiatorSocket && !session.initiatorJoinedAt;
+  }
+
+  if (role === 'joiner') {
+    return !session.joinerSocket && !session.joinerJoinedAt;
+  }
+
+  return false;
+}
+
+function markRoleJoined(sessionId, role) {
+  if (role === 'initiator') {
+    return updateSession(sessionId, { initiatorJoinedAt: Date.now() });
+  }
+
+  if (role === 'joiner') {
+    return updateSession(sessionId, { joinerJoinedAt: Date.now() });
+  }
+
+  return null;
+}
+
+function clearRoleSocket(sessionId, role) {
+  if (role === 'initiator') {
+    return updateSession(sessionId, { initiatorSocket: null });
+  }
+
+  if (role === 'joiner') {
+    return updateSession(sessionId, { joinerSocket: null });
+  }
+
+  return null;
 }
 
 function validateToken(sessionId, token) {
@@ -121,10 +163,13 @@ function cleanupExpiredSessions() {
 setInterval(cleanupExpiredSessions, 5 * 60 * 1000);
 
 module.exports = {
+  canJoinRole,
+  clearRoleSocket,
   createSession,
   getSession,
   killSession,
   lookupSessionByCode,
+  markRoleJoined,
   updateSession,
   validateToken,
 };

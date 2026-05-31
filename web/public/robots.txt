@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /r/
+Disallow: /receiver/
+
+Sitemap: https://passr.dev/sitemap.xml

@@ -47,7 +47,10 @@ export function ReceivePanel({
       <div className="stack-sm">
         <div className="section-meta">Send files back</div>
         <button type="button" className="receive-dropzone" onClick={onSelectFiles}>
-          Drop files here or click to select
+          <span>
+            <strong>Drop files here</strong>
+            or click to select
+          </span>
         </button>
       </div>
     </div>

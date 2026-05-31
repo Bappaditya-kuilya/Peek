@@ -1,6 +1,9 @@
 const {
+  canJoinRole,
+  clearRoleSocket,
   getSession,
   killSession,
+  markRoleJoined,
   updateSession,
   validateToken,
 } = require('./session');
@@ -33,7 +36,13 @@ function handleJoinMessage(socket, message, role) {
     return;
   }
 
+  if (!canJoinRole(session, role)) {
+    socket.close(4004, 'Role already joined');
+    return;
+  }
+
   assignRole(message.sessionId, role, socket);
+  markRoleJoined(message.sessionId, role);
   socket.sessionId = message.sessionId;
   socket.role = role;
 
@@ -66,13 +75,6 @@ function handleRelayMessage(socket, rawData, isBinary) {
     case 'joiner-join':
       handleJoinMessage(socket, message, 'joiner');
       break;
-    case 'file-manifest': {
-      const session = updateSession(socket.sessionId, {
-        fileCount: Array.isArray(message.files) ? message.files.length : 0,
-      });
-      sendJson(getPeerSocket(session, socket.role), message);
-      break;
-    }
     case 'webrtc-offer':
     case 'webrtc-answer':
     case 'webrtc-candidate':
@@ -101,6 +103,7 @@ function handleWebSocket(socket, req) {
   });
 
   socket.on('close', () => {
+    clearRoleSocket(socket.sessionId, socket.role);
     const session = getSession(socket.sessionId);
     const target = getPeerSocket(session, socket.role);
     sendJson(target, { type: 'peer-disconnected' });
