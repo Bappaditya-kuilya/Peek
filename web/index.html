@@ -3,10 +3,93 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Passr</title>
+
+    <!-- Primary meta -->
+    <title>Passr — Scan a QR. Files appear. Nothing installs.</title>
+    <meta
+      name="description"
+      content="Free, open-source, zero-install file transfer for shared and public computers. Scan a QR or type a 6-digit code — files move end-to-end encrypted, no account, no app. The session dies in 60 minutes."
+    />
+    <meta
+      name="keywords"
+      content="file transfer, qr file transfer, send files without app, webrtc file transfer, end-to-end encrypted file sharing, open source file transfer, no install file sharing, shared computer file transfer, p2p file transfer, transfer files to public pc"
+    />
+    <meta name="author" content="Bappaditya Kuilya" />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#ffffff" />
+    <link rel="canonical" href="https://passr.dev/" />
+
+    <!-- Icons / manifest -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Passr" />
+    <meta property="og:title" content="Passr — Scan a QR. Files appear. Nothing installs." />
+    <meta
+      property="og:description"
+      content="Free, open-source, zero-install file transfer for shared and public computers. End-to-end encrypted. No account. Session dies in 60 minutes."
+    />
+    <meta property="og:url" content="https://passr.dev/" />
+    <meta property="og:image" content="https://passr.dev/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Passr — scan a QR, files appear, nothing installs." />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Passr — Scan a QR. Files appear. Nothing installs." />
+    <meta
+      name="twitter:description"
+      content="Free, open-source, zero-install, end-to-end encrypted file transfer for shared and public computers."
+    />
+    <meta name="twitter:image" content="https://passr.dev/og.png" />
+
+    <!-- Fonts (the design system requires DM Sans + JetBrains Mono) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@600&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Structured data -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Passr",
+        "url": "https://passr.dev/",
+        "description": "Free, open-source, zero-install file transfer for shared and public computers. End-to-end encrypted, no account, session expires in 60 minutes.",
+        "applicationCategory": "UtilitiesApplication",
+        "operatingSystem": "Any",
+        "browserRequirements": "Requires a modern browser with WebRTC.",
+        "license": "https://opensource.org/licenses/MIT",
+        "isAccessibleForFree": true,
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "featureList": [
+          "Zero-install browser-to-browser file transfer",
+          "QR code or 6-digit code pairing",
+          "End-to-end AES-GCM encryption",
+          "Two-way transfer",
+          "Download all as ZIP",
+          "Sessions auto-expire in 60 minutes"
+        ],
+        "author": {
+          "@type": "Person",
+          "name": "Bappaditya Kuilya"
+        }
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
-  </html>
+</html>

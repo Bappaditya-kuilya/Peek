@@ -112,6 +112,7 @@ function ensureArrayBuffer(data) {
 export function useTransfer({
   encryptionKey,
   onActivity,
+  onError,
   onManifest,
   onReceiveComplete,
   onReceiveProgress,
@@ -165,8 +166,25 @@ export function useTransfer({
   }
 
   async function handleBinaryMessage(binaryData) {
-    const decrypted = await decryptChunk(encryptionKey, ensureArrayBuffer(binaryData));
-    const packet = decodePacket(decrypted);
+    let decrypted;
+    try {
+      decrypted = await decryptChunk(encryptionKey, ensureArrayBuffer(binaryData));
+    } catch {
+      // SECURITY: a failed AES-GCM decrypt means a wrong key (a truncated or
+      // tampered link) or a corrupted packet. Fail gracefully — never crash the
+      // transfer loop. The auth tag did its job; we just drop the packet and
+      // let the UI tell the user the link looks wrong.
+      onError?.(new Error('decrypt-failed'));
+      return;
+    }
+
+    let packet;
+    try {
+      packet = decodePacket(decrypted);
+    } catch {
+      onError?.(new Error('decode-failed'));
+      return;
+    }
 
     if (packet.type === 'manifest') {
       const files = packet.payload.files.map((file) => ({

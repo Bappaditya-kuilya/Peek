@@ -15,6 +15,16 @@ const sessionCreateLimiter = rateLimit({
   },
 });
 
+const sessionLookupLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'Too many lookup attempts. Please wait.',
+  },
+});
+
 function isAllowedOrigin(origin) {
   return allowedOrigins.includes(origin);
 }
@@ -23,4 +33,5 @@ module.exports = {
   allowedOrigins,
   isAllowedOrigin,
   sessionCreateLimiter,
+  sessionLookupLimiter,
 };

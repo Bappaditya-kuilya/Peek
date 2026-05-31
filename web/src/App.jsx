@@ -11,6 +11,7 @@ import { useSession } from './hooks/useSession.js';
 import { useTransfer } from './hooks/useTransfer.js';
 import { useWebRTC } from './hooks/useWebRTC.js';
 import { formatTimer } from './utils/format.js';
+import { safeBaseName } from './utils/sanitize.js';
 import { downloadAllAsZip } from './utils/zip.js';
 import { importKeyFromBase64 } from './hooks/useCrypto.js';
 
@@ -83,6 +84,11 @@ function SenderApp() {
   const { createSession, killSession, session } = useSession();
 
   const transportRef = useRef(null);
+  // Mirrors of the latest file lists so the session-close handler (which lives
+  // in a [session] effect closure) can build an accurate ended-summary instead
+  // of capturing stale empty arrays.
+  const sharedFilesRef = useRef([]);
+  const receivedFilesRef = useRef([]);
 
   function addActivity(fileName) {
     setActivity((current) => [
@@ -94,6 +100,9 @@ function SenderApp() {
   const transfer = useTransfer({
     encryptionKey: session?.key,
     onActivity: addActivity,
+    onError() {
+      setStatusMessage('Some incoming data could not be read. The connection may be unstable.');
+    },
     onManifest(files) {
       setReceivedFiles(files.map((file) => ({ ...file, progress: 0, status: 'queued' })));
     },
@@ -149,6 +158,14 @@ function SenderApp() {
     const interval = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    sharedFilesRef.current = sharedFiles;
+  }, [sharedFiles]);
+
+  useEffect(() => {
+    receivedFilesRef.current = receivedFiles;
+  }, [receivedFiles]);
 
   useEffect(() => {
     if (!session) return undefined;
@@ -208,8 +225,18 @@ function SenderApp() {
       }
     };
 
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       fallbackSocketRef.current = null;
+      // 4000 = killed by the other peer, 4001 = expired server-side. Either way
+      // the session is gone mid-use and the sender must be told. Normal local
+      // teardown closes with a non-4000 code, so it won't trip this.
+      if (event.code === 4000 || event.code === 4001) {
+        setSessionEndedSummary([
+          ...sharedFilesRef.current.map((file) => ({ name: file.name, status: file.status })),
+          ...receivedFilesRef.current.map((file) => ({ name: file.name, status: file.status })),
+        ]);
+        setScreen(SCREEN_ENDED);
+      }
     };
 
     return () => {
@@ -249,7 +276,7 @@ function SenderApp() {
     if (fallbackSocketRef.current?.readyState === WebSocket.OPEN) {
       fallbackSocketRef.current.send(JSON.stringify({ type: 'kill-session' }));
     }
-    await killSession(session.sessionId);
+    await killSession(session.sessionId, session.token);
     setScreen(SCREEN_ENDED);
   }
 
@@ -266,7 +293,7 @@ function SenderApp() {
     const url = URL.createObjectURL(file.blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = file.name;
+    anchor.download = safeBaseName(file.name);
     anchor.click();
     URL.revokeObjectURL(url);
     transfer.sendDownloadNotice(file.id, transportRef.current).catch(() => {});
@@ -297,10 +324,33 @@ function SenderApp() {
             <div className="screen-header">
               <div className="wordmark">passr</div>
             </div>
-            <div className="stack-md">
-              <p className="hero-copy">Share files to any device.</p>
-              <p className="hero-copy">Scan a QR on the other device.</p>
-              <p className="hero-copy">No install. No account.</p>
+            <div className="hero-panel stack-lg">
+              <div className="stack-sm">
+                <div className="hero-kicker">Shared computer transfer</div>
+                <h1 className="hero-title">Scan once. Transfer like the file was already there.</h1>
+                <p className="hero-subtitle">
+                  Built for labs, library PCs, kiosks, and any browser where installs and sign-ins get in the way.
+                </p>
+              </div>
+
+              <div className="hero-feature-list">
+                <div className="hero-feature">
+                  <strong>No install</strong>
+                  <span>The receiver opens in a normal browser tab.</span>
+                </div>
+                <div className="hero-feature">
+                  <strong>No account</strong>
+                  <span>One session, one QR, auto-expiry in 60 minutes.</span>
+                </div>
+                <div className="hero-feature">
+                  <strong>Encrypted relay fallback</strong>
+                  <span>Still works when direct local transfer fails.</span>
+                </div>
+                <div className="hero-feature">
+                  <strong>Two-way</strong>
+                  <span>The other device can send files back in the same session.</span>
+                </div>
+              </div>
             </div>
             <button type="button" className="button-primary" onClick={triggerFilePicker}>Select files to share</button>
             <div className="screen-divider" />
@@ -326,14 +376,31 @@ function SenderApp() {
             </div>
 
             <QRDisplay expiresAt={session.expiresAt} joinUrl={session.joinUrl} numericCode={session.numericCode} />
+            <div className="metric-strip">
+              <div className="metric-cell">
+                <span className="metric-value">{sharedFiles.length}</span>
+                <span className="metric-label">Files shared</span>
+              </div>
+              <div className="metric-cell">
+                <span className="metric-value">{receivedFiles.filter((file) => file.status === 'done').length}</span>
+                <span className="metric-label">Files received</span>
+              </div>
+              <div className="metric-cell">
+                <span className="metric-value">{peerConnected ? 'Live' : 'Waiting'}</span>
+                <span className="metric-label">Session state</span>
+              </div>
+            </div>
             <div className="screen-divider" />
             <ActivityFeed items={activity} />
             <div className="screen-divider" />
 
-            <div className="file-list">
-              {sharedFiles.map((file) => (
-                <FileRow key={file.id} file={file} progress={file.progress} status={file.status} />
-              ))}
+            <div className="section-panel">
+              <div className="subtle-list-title">Shared by you</div>
+              <div className="file-list">
+                {sharedFiles.map((file) => (
+                  <FileRow key={file.id} file={file} progress={file.progress} status={file.status} />
+                ))}
+              </div>
             </div>
 
             {statusMessage ? <div className="status-copy">{statusMessage}</div> : null}
@@ -423,6 +490,10 @@ function ReceiverLookup() {
             <h1 className="section-title">Enter your 6-digit code</h1>
             <NumericCodeInput autoFocus onComplete={handleLookup} />
             <div className="receiver-note">For full file access, scan the QR code instead.</div>
+            <div className="empty-panel">
+              <div className="subtle-list-title">What this code does</div>
+              <div className="hero-copy">It confirms the session exists, but it does not authenticate this device.</div>
+            </div>
           </div>
         </div>
       </div>
@@ -436,16 +507,13 @@ function ReceiverSession() {
   const { sessionId } = useParams();
   const sendBackInputRef = useRef(null);
   const fallbackSocketRef = useRef(null);
-  const killTimeoutRef = useRef(null);
   const [now, setNow] = useState(Date.now());
   const [statusMessage, setStatusMessage] = useState('');
   const [statusDanger, setStatusDanger] = useState(false);
   const [joined, setJoined] = useState(false);
-  const [lookupMode, setLookupMode] = useState(false);
   const [lookupResult, setLookupResult] = useState(location.state?.lookup || null);
   const [receivedFiles, setReceivedFiles] = useState([]);
   const [outgoingFiles, setOutgoingFiles] = useState([]);
-  const [transferStarted, setTransferStarted] = useState(false);
   const [confirmKill, setConfirmKill] = useState(false);
   const fragment = window.location.hash.replace(/^#/, '');
   const [token, keyBase64] = fragment.split('.');
@@ -455,6 +523,10 @@ function ReceiverSession() {
 
   const transfer = useTransfer({
     encryptionKey: key,
+    onError() {
+      setStatusMessage('We could not decrypt the files. The link may be incomplete — ask the sender to share the full link again.');
+      setStatusDanger(true);
+    },
     onManifest(files) {
       setReceivedFiles(files.map((file) => ({ ...file, progress: 0, status: 'queued' })));
     },
@@ -508,14 +580,6 @@ function ReceiverSession() {
 
   useEffect(() => {
     if (!fullLinkMode) {
-      setLookupMode(true);
-      if (!lookupResult) {
-        fetch(`${RELAY_HTTP_URL}/session/lookup`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code: sessionId }),
-        }).catch(() => {});
-      }
       return;
     }
 
@@ -600,7 +664,7 @@ function ReceiverSession() {
     const url = URL.createObjectURL(file.blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = file.name;
+    anchor.download = safeBaseName(file.name);
     anchor.click();
     URL.revokeObjectURL(url);
     transfer.sendDownloadNotice(file.id, transportRef.current).catch(() => {});
@@ -610,7 +674,6 @@ function ReceiverSession() {
     const files = Array.from(event.target.files || []);
     if (!files.length) return;
     setOutgoingFiles(files.map((file, index) => ({ id: index, name: file.name, progress: 0, size: file.size, status: 'queued' })));
-    setTransferStarted(true);
     await transfer.sendFiles(files, transportRef.current);
     event.target.value = '';
   }
@@ -630,8 +693,14 @@ function ReceiverSession() {
             <div className="stack-md">
               <h1 className="section-title">Session found</h1>
               <div className="hero-copy">Files available: {lookupResult?.filesAvailable ?? 'unknown'}</div>
-              <div className="hero-copy">
+              {lookupResult?.expiresAt ? (
+                <div className="status-copy">Session expires in {formatTimer(lookupResult.expiresAt)}</div>
+              ) : null}
+              <div className="empty-panel">
+                <div className="subtle-list-title">Next step</div>
+                <div className="hero-copy">
                 Session found. To receive files, open the full link on this device — ask the sender to share it via message or email.
+                </div>
               </div>
             </div>
             <button type="button" className="button-secondary" onClick={() => navigate('/r')}>
@@ -672,22 +741,38 @@ function ReceiverSession() {
 
           <div className="stack-md">
             <h1 className="section-title">Files from other device</h1>
-            <div className="file-list">
-              {receivedFiles.map((file) => (
-                <FileRow
-                  key={file.id}
-                  file={file}
-                  progress={file.progress}
-                  status={file.status}
-                  action={
-                    file.blob ? (
-                      <button type="button" className="compact-button" onClick={() => downloadFile(file)}>
-                        Download
-                      </button>
-                    ) : null
-                  }
-                />
-              ))}
+            <div className="metric-strip">
+              <div className="metric-cell">
+                <span className="metric-value">{receivedFiles.length}</span>
+                <span className="metric-label">Incoming files</span>
+              </div>
+              <div className="metric-cell">
+                <span className="metric-value">{receivedFiles.filter((file) => file.blob).length}</span>
+                <span className="metric-label">Ready to download</span>
+              </div>
+              <div className="metric-cell">
+                <span className="metric-value">Live</span>
+                <span className="metric-label">Session state</span>
+              </div>
+            </div>
+            <div className="section-panel">
+              <div className="file-list">
+                {receivedFiles.map((file) => (
+                  <FileRow
+                    key={file.id}
+                    file={file}
+                    progress={file.progress}
+                    status={file.status}
+                    action={
+                      file.blob ? (
+                        <button type="button" className="compact-button" onClick={() => downloadFile(file)}>
+                          Download
+                        </button>
+                      ) : null
+                    }
+                  />
+                ))}
+              </div>
             </div>
 
             {receivedFiles.some((file) => file.blob) ? (

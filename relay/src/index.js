@@ -3,14 +3,17 @@ const http = require('http');
 const { WebSocketServer } = require('ws');
 const { handleWebSocket } = require('./relay');
 const {
+  getSession,
   createSession,
   killSession,
   lookupSessionByCode,
+  validateToken,
 } = require('./session');
 const {
   allowedOrigins,
   isAllowedOrigin,
   sessionCreateLimiter,
+  sessionLookupLimiter,
 } = require('./security');
 
 const app = express();
@@ -41,7 +44,7 @@ app.post('/session', sessionCreateLimiter, (req, res) => {
   });
 });
 
-app.post('/session/lookup', (req, res) => {
+app.post('/session/lookup', sessionLookupLimiter, (req, res) => {
   const code = String(req.body?.code || '').trim();
   if (!/^\d{6}$/.test(code)) {
     res.status(400).json({ error: 'Invalid code' });
@@ -58,6 +61,12 @@ app.post('/session/lookup', (req, res) => {
 });
 
 app.delete('/session/:id', (req, res) => {
+  const token = String(req.body?.token || '');
+  const session = getSession(req.params.id);
+  if (!session || !validateToken(req.params.id, token)) {
+    res.status(403).json({ ok: false, error: 'Forbidden' });
+    return;
+  }
   const ok = killSession(req.params.id, 'Session ended', 4000);
   res.json({ ok });
 });

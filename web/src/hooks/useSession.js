@@ -84,9 +84,13 @@ export function useSession() {
     return nextSession;
   }
 
-  async function killSession(sessionId) {
+  async function killSession(sessionId, token) {
     await fetch(`${DEFAULT_HTTP_URL}/session/${sessionId}`, {
       method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ token }),
     }).catch(() => {});
 
     if (wakeLockRef.current) {
