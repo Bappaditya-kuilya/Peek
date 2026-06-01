@@ -1,5 +1,4 @@
 const {
-  canJoinRole,
   clearRoleSocket,
   getSession,
   killSession,
@@ -36,9 +35,17 @@ function handleJoinMessage(socket, message, role) {
     return;
   }
 
-  if (!canJoinRole(session, role)) {
-    socket.close(4004, 'Role already joined');
-    return;
+  // Reconnection support. A valid session token proves this is the same
+  // authorized party, so allow it to (re)claim its role. If a previous socket
+  // still holds the role — a stale connection after a network blip or a client
+  // re-render — replace it instead of rejecting. Rejecting (the old 4004 path)
+  // closed the reconnecting peer and ended the session immediately.
+  const existing = role === 'initiator' ? session.initiatorSocket : session.joinerSocket;
+  if (existing && existing !== socket) {
+    existing.replaced = true;
+    try {
+      existing.close(4005, 'Replaced by reconnect');
+    } catch {}
   }
 
   assignRole(message.sessionId, role, socket);
@@ -103,9 +110,21 @@ function handleWebSocket(socket, req) {
   });
 
   socket.on('close', () => {
-    clearRoleSocket(socket.sessionId, socket.role);
+    // If this socket was superseded by a reconnect, the role already points at
+    // a newer socket — do not clear it or tell the peer we disconnected.
+    if (socket.replaced) {
+      return;
+    }
     const session = getSession(socket.sessionId);
-    const target = getPeerSocket(session, socket.role);
+    if (!session) {
+      return;
+    }
+    const current = socket.role === 'initiator' ? session.initiatorSocket : session.joinerSocket;
+    if (current && current !== socket) {
+      return;
+    }
+    clearRoleSocket(socket.sessionId, socket.role);
+    const target = getPeerSocket(getSession(socket.sessionId), socket.role);
     sendJson(target, { type: 'peer-disconnected' });
   });
 }
