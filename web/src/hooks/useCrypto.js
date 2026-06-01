@@ -33,12 +33,16 @@ export async function exportKeyToBase64(key) {
 
 export async function importKeyFromBase64(base64) {
   const rawBytes = bytesFromBase64(base64);
+  // Two-way transfer: the joiner both decrypts incoming files and encrypts the
+  // files it sends back, so the imported key needs both usages. Importing it
+  // decrypt-only made encryptChunk throw InvalidAccessError and silently broke
+  // the joiner -> initiator direction. Still non-extractable.
   return window.crypto.subtle.importKey(
     'raw',
     rawBytes,
     { name: 'AES-GCM', length: 256 },
     false,
-    ['decrypt']
+    ['decrypt', 'encrypt']
   );
 }
 
