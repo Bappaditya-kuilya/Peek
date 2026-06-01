@@ -598,7 +598,10 @@ function ReceiverSession() {
     return () => {
       active = false;
     };
-  }, [fullLinkMode, keyBase64, lookupResult, sessionId]);
+    // Deps are only what the key import actually uses. Including lookupResult
+    // here caused the key to be recreated on every expiresAt update, which tore
+    // down and reopened the WebSocket in a loop.
+  }, [fullLinkMode, keyBase64]);
 
   useEffect(() => {
     if (!fullLinkMode || !key) return undefined;
