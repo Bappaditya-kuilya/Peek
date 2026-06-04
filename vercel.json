@@ -1,0 +1,18 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "npm run build",
+  "outputDirectory": "web/dist",
+  "rewrites": [
+    { "source": "/receiver/:path*", "destination": "/receiver/:path*" },
+    { "source": "/assets/:path*", "destination": "/assets/:path*" },
+    { "source": "/favicon.ico", "destination": "/favicon.ico" },
+    { "source": "/favicon.svg", "destination": "/favicon.svg" },
+    { "source": "/apple-touch-icon.png", "destination": "/apple-touch-icon.png" },
+    { "source": "/site.webmanifest", "destination": "/site.webmanifest" },
+    { "source": "/robots.txt", "destination": "/robots.txt" },
+    { "source": "/sitemap.xml", "destination": "/sitemap.xml" },
+    { "source": "/og.png", "destination": "/og.png" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

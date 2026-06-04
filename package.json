@@ -1,0 +1,7 @@
+{
+  "name": "passr",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix web run build"
+  }
+}
