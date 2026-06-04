@@ -1,8 +1,8 @@
 const { createInMemoryAbuseStore } = require('./stores/inMemoryAbuseStore');
 
 const defaultOrigins = process.env.NODE_ENV === 'production'
-  ? 'https://peek.dev'
-  : 'https://peek.dev,http://localhost:5173,http://localhost:5174';
+  ? 'https://peek.dev,https://*.vercel.app'
+  : 'https://peek.dev,https://*.vercel.app,http://localhost:5173,http://localhost:5174';
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || defaultOrigins)
   .split(',')
@@ -89,8 +89,28 @@ function createWindowCounter({ windowMs, max }) {
   };
 }
 
+function originMatchesAllowedPattern(origin, pattern) {
+  if (origin === pattern) {
+    return true;
+  }
+
+  if (!pattern.includes('*')) {
+    return false;
+  }
+
+  try {
+    const parsedOrigin = new URL(origin);
+    const parsedPattern = new URL(pattern.replace('*.', 'wildcard.'));
+    const suffix = parsedPattern.hostname.replace(/^wildcard\./, '.');
+
+    return parsedOrigin.protocol === parsedPattern.protocol && parsedOrigin.hostname.endsWith(suffix);
+  } catch {
+    return false;
+  }
+}
+
 function isAllowedOrigin(origin) {
-  return allowedOrigins.includes(origin);
+  return allowedOrigins.some((allowedOrigin) => originMatchesAllowedPattern(origin, allowedOrigin));
 }
 
 function requireAllowedOrigin(req, res, next) {
@@ -181,6 +201,7 @@ module.exports = {
   getRequestIp,
   isAllowedOrigin,
   normalizeIp,
+  originMatchesAllowedPattern,
   requireAllowedOrigin,
   sessionCreateLimiter,
   sessionLookupLimiter,

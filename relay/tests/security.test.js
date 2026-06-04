@@ -12,6 +12,12 @@ test('unknown origins are rejected', () => {
   assert.equal(security.isAllowedOrigin('https://evil.example'), false);
 });
 
+test('wildcard origin patterns require protocol and host suffix match', () => {
+  assert.equal(security.originMatchesAllowedPattern('https://preview.vercel.app', 'https://*.vercel.app'), true);
+  assert.equal(security.originMatchesAllowedPattern('http://preview.vercel.app', 'https://*.vercel.app'), false);
+  assert.equal(security.originMatchesAllowedPattern('https://vercel.app.evil.example', 'https://*.vercel.app'), false);
+});
+
 test('parseTrustProxy handles booleans, hop counts, and subnet strings', () => {
   assert.equal(security.parseTrustProxy('true'), true);
   assert.equal(security.parseTrustProxy('false'), false);

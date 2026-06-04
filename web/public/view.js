@@ -1,4 +1,6 @@
-const RELAY_HTTP_URL = import.meta.env.VITE_RELAY_HTTP_URL || 'http://localhost:3000';
+const PRODUCTION_RELAY_HTTP_URL = 'https://peek-relay.fly.dev';
+const isLocalHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const RELAY_HTTP_URL = isLocalHost ? 'http://localhost:3000' : PRODUCTION_RELAY_HTTP_URL;
 const IV_LENGTH = 12;
 
 const app = document.getElementById('app');

@@ -18,14 +18,15 @@ import { safeBaseName } from './utils/sanitize.js';
 import { createViewUrl, encryptViewFile, uploadEncryptedView } from './utils/viewCrypto.js';
 import { downloadAllAsZip } from './utils/zip.js';
 import { importKeyFromBase64 } from './hooks/useCrypto.js';
+import { getRelayHttpUrl, getRelayWsUrl } from './utils/relayConfig.js';
 
 const SCREEN_HOME = 'home';
 const SCREEN_PICKER = 'picker';
 const SCREEN_ACTIVE = 'active';
 const SCREEN_ENDED = 'ended';
 
-const RELAY_HTTP_URL = import.meta.env.VITE_RELAY_HTTP_URL || 'http://localhost:3000';
-const RELAY_WS_URL = import.meta.env.VITE_RELAY_WS_URL || 'ws://localhost:3000';
+const RELAY_HTTP_URL = getRelayHttpUrl();
+const RELAY_WS_URL = getRelayWsUrl();
 
 function createLocalFileRecord(file, index) {
   return {

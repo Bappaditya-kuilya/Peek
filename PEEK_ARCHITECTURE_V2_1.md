@@ -47,3 +47,9 @@
 - Keep domains configurable; do not hardcode public origins in runtime logic.
 - Keep frontend assets self-contained where possible.
 - Prefer safe DOM construction or framework escaping over raw HTML templating.
+
+## Runtime URL policy
+
+- Local development uses `localhost` relay URLs.
+- Production builds must use explicit relay URLs through `VITE_RELAY_HTTP_URL` and `VITE_RELAY_WS_URL`.
+- If those build variables are absent, the hosted web app falls back to the configured Fly relay host instead of `localhost`.
