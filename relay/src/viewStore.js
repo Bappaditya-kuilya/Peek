@@ -17,5 +17,6 @@ module.exports = {
   createView: (...args) => activeViewStore.createView(...args),
   deleteView: (...args) => activeViewStore.deleteView(...args),
   getView: (...args) => activeViewStore.getView(...args),
+  incrementViewCount: (...args) => activeViewStore.incrementViewCount(...args),
   validateUploadToken: (...args) => activeViewStore.validateUploadToken(...args),
 };

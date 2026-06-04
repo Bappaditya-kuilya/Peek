@@ -61,6 +61,15 @@ function createInMemoryViewStore() {
     return crypto.timingSafeEqual(expected, actual);
   }
 
+  function incrementViewCount(id) {
+    const view = getView(id);
+    if (!view) {
+      return false;
+    }
+    view.viewCount += 1;
+    return true;
+  }
+
   function cleanupExpiredViews() {
     const now = Date.now();
     for (const [id, view] of views.entries()) {
@@ -78,6 +87,7 @@ function createInMemoryViewStore() {
     createView,
     deleteView,
     getView,
+    incrementViewCount,
     validateUploadToken,
   };
 }
