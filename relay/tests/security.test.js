@@ -34,3 +34,25 @@ test('createWindowCounter blocks when a key exceeds the limit', () => {
   limiter.reset('ip-1');
   assert.equal(limiter.consume('ip-1').allowed, true);
 });
+
+test('abuse store can be swapped for websocket limiting', async () => {
+  const calls = [];
+  const originalStore = security.getAbuseStore();
+  security.setAbuseStore({
+    consume(...args) {
+      calls.push(args);
+      return Promise.resolve({ allowed: true, remaining: 9, resetAt: Date.now() + 1000 });
+    },
+  });
+
+  try {
+    assert.equal((await security.allowWebSocketConnection('127.0.0.1')).allowed, true);
+    assert.equal((await security.allowWebSocketMessage('127.0.0.1')).allowed, true);
+    assert.deepEqual(calls.map(([key]) => key), [
+      'ws-connect:127.0.0.1',
+      'ws-message:127.0.0.1',
+    ]);
+  } finally {
+    security.setAbuseStore(originalStore);
+  }
+});
