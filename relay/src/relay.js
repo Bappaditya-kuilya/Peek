@@ -63,7 +63,7 @@ async function handleJoinMessage(socket, message, role) {
 }
 
 async function handleRelayMessage(socket, rawData, isBinary) {
-  const messageAllowance = allowWebSocketMessage(socket.clientIp);
+  const messageAllowance = await allowWebSocketMessage(socket.clientIp);
   if (!messageAllowance.allowed) {
     socket.close(4008, 'Rate limited');
     return;
@@ -127,7 +127,7 @@ async function handleRelayMessage(socket, rawData, isBinary) {
   }
 }
 
-function handleWebSocket(socket, req) {
+async function handleWebSocket(socket, req) {
   const origin = req.headers.origin;
   if (!isAllowedOrigin(origin)) {
     socket.close(4003, 'Forbidden origin');
@@ -135,7 +135,7 @@ function handleWebSocket(socket, req) {
   }
 
   socket.clientIp = normalizeIp(getRequestIp(req));
-  const connectionAllowance = allowWebSocketConnection(socket.clientIp);
+  const connectionAllowance = await allowWebSocketConnection(socket.clientIp);
   if (!connectionAllowance.allowed) {
     socket.close(4008, 'Rate limited');
     return;

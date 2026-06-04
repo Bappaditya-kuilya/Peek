@@ -1,4 +1,4 @@
-const rateLimit = require('express-rate-limit');
+const { createInMemoryAbuseStore } = require('./stores/inMemoryAbuseStore');
 
 const defaultOrigins = process.env.NODE_ENV === 'production'
   ? 'https://peek.dev'
@@ -8,11 +8,6 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || defaultOrigins)
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
-
-const baseLimiterConfig = {
-  standardHeaders: true,
-  legacyHeaders: false,
-};
 
 function parseTrustProxy(value) {
   const normalized = String(value || '').trim().toLowerCase();
@@ -33,6 +28,7 @@ function parseTrustProxy(value) {
 }
 
 const trustProxy = parseTrustProxy(process.env.TRUST_PROXY);
+let activeAbuseStore = createInMemoryAbuseStore();
 
 function normalizeIp(ip) {
   const raw = String(ip || '').trim();
@@ -93,51 +89,6 @@ function createWindowCounter({ windowMs, max }) {
   };
 }
 
-const sessionCreateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  ...baseLimiterConfig,
-  message: {
-    error: 'Too many sessions created. Please wait.',
-  },
-});
-
-const sessionLookupLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 30,
-  ...baseLimiterConfig,
-  message: {
-    error: 'Too many lookup attempts. Please wait.',
-  },
-});
-
-const viewUploadLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 20,
-  ...baseLimiterConfig,
-  message: {
-    error: 'Too many Peek uploads. Please wait.',
-  },
-});
-
-const viewFetchLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 60,
-  ...baseLimiterConfig,
-  message: {
-    error: 'Too many Peek views. Please wait.',
-  },
-});
-
-const viewDeleteLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 30,
-  ...baseLimiterConfig,
-  message: {
-    error: 'Too many Peek delete attempts. Please wait.',
-  },
-});
-
 function isAllowedOrigin(origin) {
   return allowedOrigins.includes(origin);
 }
@@ -151,35 +102,89 @@ function requireAllowedOrigin(req, res, next) {
   next();
 }
 
-const websocketConnectionLimiter = createWindowCounter({
-  windowMs: 60 * 1000,
-  max: 30,
-});
-
-const websocketMessageLimiter = createWindowCounter({
-  windowMs: 10 * 1000,
-  max: 120,
-});
-
-function allowWebSocketConnection(ip) {
-  return websocketConnectionLimiter.consume(normalizeIp(ip));
+function getAbuseStore() {
+  return activeAbuseStore;
 }
 
-function allowWebSocketMessage(ip) {
-  return websocketMessageLimiter.consume(normalizeIp(ip));
+function setAbuseStore(store) {
+  activeAbuseStore = store;
+}
+
+function createRateLimiter({ bucket, windowMs, max, message }) {
+  return async (req, res, next) => {
+    const key = `${bucket}:${getRequestIp(req)}`;
+    const result = await activeAbuseStore.consume(key, windowMs, max);
+
+    res.setHeader('RateLimit-Limit', String(max));
+    res.setHeader('RateLimit-Remaining', String(result.remaining));
+    res.setHeader('RateLimit-Reset', String(Math.max(Math.ceil((result.resetAt - Date.now()) / 1000), 0)));
+
+    if (!result.allowed) {
+      res.status(429).json({ error: message });
+      return;
+    }
+
+    next();
+  };
+}
+
+const sessionCreateLimiter = createRateLimiter({
+  bucket: 'session-create',
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: 'Too many sessions created. Please wait.',
+});
+
+const sessionLookupLimiter = createRateLimiter({
+  bucket: 'session-lookup',
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: 'Too many lookup attempts. Please wait.',
+});
+
+const viewUploadLimiter = createRateLimiter({
+  bucket: 'view-upload',
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  message: 'Too many Peek uploads. Please wait.',
+});
+
+const viewFetchLimiter = createRateLimiter({
+  bucket: 'view-fetch',
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  message: 'Too many Peek views. Please wait.',
+});
+
+const viewDeleteLimiter = createRateLimiter({
+  bucket: 'view-delete',
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: 'Too many Peek delete attempts. Please wait.',
+});
+
+async function allowWebSocketConnection(ip) {
+  return activeAbuseStore.consume(`ws-connect:${normalizeIp(ip)}`, 60 * 1000, 30);
+}
+
+async function allowWebSocketMessage(ip) {
+  return activeAbuseStore.consume(`ws-message:${normalizeIp(ip)}`, 10 * 1000, 120);
 }
 
 module.exports = {
   allowedOrigins,
   allowWebSocketConnection,
   allowWebSocketMessage,
+  createRateLimiter,
   createWindowCounter,
+  getAbuseStore,
   getRequestIp,
   isAllowedOrigin,
   normalizeIp,
   requireAllowedOrigin,
   sessionCreateLimiter,
   sessionLookupLimiter,
+  setAbuseStore,
   trustProxy,
   viewDeleteLimiter,
   viewFetchLimiter,
