@@ -1,6 +1,6 @@
 {
-  "name": "Passr",
-  "short_name": "Passr",
+  "name": "Peek",
+  "short_name": "Peek",
   "description": "Zero-install, end-to-end encrypted file transfer for shared and public computers.",
   "start_url": "/",
   "display": "standalone",

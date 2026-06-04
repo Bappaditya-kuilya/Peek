@@ -160,7 +160,8 @@ function cleanupExpiredSessions() {
   }
 }
 
-setInterval(cleanupExpiredSessions, 5 * 60 * 1000);
+const sessionCleanupTimer = setInterval(cleanupExpiredSessions, 5 * 60 * 1000);
+sessionCleanupTimer.unref?.();
 
 module.exports = {
   canJoinRole,

@@ -1,8 +1,7 @@
 node_modules/
 dist/
 
-# Receiver is mirrored from /receiver at build time by vite-plugin-static-copy.
-# Never commit the generated copy.
+# Static receiver assets are built from /web/receiver-src by vite-plugin-static-copy.
 web/public/receiver/
 .DS_Store
 *.log

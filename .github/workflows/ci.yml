@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            relay/package-lock.json
+            web/package-lock.json
+
+      - name: Install relay deps
+        run: npm ci
+        working-directory: relay
+
+      - name: Install web deps
+        run: npm ci
+        working-directory: web
+
+      - name: Run relay tests
+        run: npm run test:relay
+
+      - name: Build web app
+        run: npm run build
+

@@ -3,4 +3,4 @@ Allow: /
 Disallow: /r/
 Disallow: /receiver/
 
-Sitemap: https://passr.dev/sitemap.xml
+Sitemap: https://peek.dev/sitemap.xml

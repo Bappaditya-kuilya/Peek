@@ -3,6 +3,33 @@ const IV_LENGTH = 12;
 
 const app = document.getElementById('app');
 
+function clearApp() {
+  app.replaceChildren();
+}
+
+function buildShell({ timerText = 'View only', content }) {
+  clearApp();
+  const shell = document.createElement('div');
+  shell.className = 'shell';
+
+  const header = document.createElement('div');
+  header.className = 'panel header';
+  const wordmark = document.createElement('div');
+  wordmark.className = 'wordmark';
+  wordmark.textContent = 'Peek';
+  const timer = document.createElement('div');
+  timer.className = 'timer';
+  timer.id = timerText === '--:--' ? 'peek-timer' : '';
+  timer.textContent = timerText;
+  header.append(wordmark, timer);
+
+  const contentPanel = document.createElement('div');
+  contentPanel.className = 'panel content';
+  contentPanel.append(content);
+  shell.append(header, contentPanel);
+  app.append(shell);
+}
+
 function base64ToBytes(base64) {
   const binary = window.atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -31,18 +58,15 @@ async function decryptViewFile(encryptionKey, encryptedBuffer) {
 }
 
 function renderStatus(message, isError = false) {
-  app.innerHTML = `
-    <div class="shell">
-      <div class="panel header">
-        <div class="wordmark">Peek</div>
-        <div class="timer">View only</div>
-      </div>
-      <div class="panel content">
-        <div class="warning">⚠ This is a view-only peek. Screenshots and screen recording are not prevented.</div>
-        <div class="status ${isError ? 'error' : ''}">${message}</div>
-      </div>
-    </div>
-  `;
+  const fragment = document.createDocumentFragment();
+  const warning = document.createElement('div');
+  warning.className = 'warning';
+  warning.textContent = 'This is a view-only peek. Screenshots and screen recording are not prevented.';
+  const status = document.createElement('div');
+  status.className = `status ${isError ? 'error' : ''}`.trim();
+  status.textContent = message;
+  fragment.append(warning, status);
+  buildShell({ timerText: 'View only', content: fragment });
 }
 
 function startTimer(expiresAt) {
@@ -63,25 +87,17 @@ function startTimer(expiresAt) {
 }
 
 async function renderPdf(blob) {
-  const pdfjs = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.5.136/build/pdf.min.mjs');
-  pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.5.136/build/pdf.worker.min.mjs';
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  const pdf = await pdfjs.getDocument({ data: bytes }).promise;
-  const stack = document.createElement('div');
-  stack.className = 'pdf-stack';
-
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-    const page = await pdf.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: 1.4 });
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d', { alpha: false });
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    await page.render({ canvasContext: context, viewport }).promise;
-    stack.appendChild(canvas);
-  }
-
-  return stack;
+  const objectUrl = URL.createObjectURL(blob);
+  const frame = document.createElement('iframe');
+  frame.src = objectUrl;
+  frame.title = 'Peek PDF preview';
+  frame.style.width = '100%';
+  frame.style.minHeight = '70vh';
+  frame.style.border = '0';
+  frame.addEventListener('load', () => {
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
+  }, { once: true });
+  return frame;
 }
 
 async function renderImage(blob) {
@@ -139,31 +155,32 @@ async function main() {
     return;
   }
 
-  app.innerHTML = `
-    <div class="shell">
-      <div class="panel header">
-        <div class="wordmark">Peek</div>
-        <div class="timer" id="peek-timer">--:--</div>
-      </div>
-      <div class="panel content">
-        <div class="warning">⚠ This is a view-only peek. Screenshots and screen recording are not prevented.</div>
-        <h1 class="title">${filename}</h1>
-        <div class="meta">View-only. Timed. No install.</div>
-        <div class="panel viewer" id="viewer"></div>
-      </div>
-    </div>
-  `;
+  const fragment = document.createDocumentFragment();
+  const warning = document.createElement('div');
+  warning.className = 'warning';
+  warning.textContent = 'This is a view-only peek. Screenshots and screen recording are not prevented.';
+  const title = document.createElement('h1');
+  title.className = 'title';
+  title.textContent = filename;
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  meta.textContent = 'View-only. Timed. No install.';
+  const viewer = document.createElement('div');
+  viewer.className = 'panel viewer';
+  viewer.id = 'viewer';
+  fragment.append(warning, title, meta, viewer);
+  buildShell({ timerText: '--:--', content: fragment });
 
   startTimer(expiresAt);
 
   const blob = new Blob([decrypted], { type: mimeType });
-  const viewer = document.getElementById('viewer');
+  const viewerNode = document.getElementById('viewer');
 
   try {
     if (mimeType === 'application/pdf') {
-      viewer.appendChild(await renderPdf(blob));
+      viewerNode.appendChild(await renderPdf(blob));
     } else if (mimeType.startsWith('image/')) {
-      viewer.appendChild(await renderImage(blob));
+      viewerNode.appendChild(await renderImage(blob));
     } else {
       renderStatus('This Peek file type is not supported.', true);
     }

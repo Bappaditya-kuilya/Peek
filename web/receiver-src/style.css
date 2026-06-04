@@ -1,21 +1,21 @@
 :root {
-  --color-bg: #ffffff;
-  --color-bg-subtle: #f7f7f6;
-  --color-bg-hover: #f0f0ee;
-  --color-border: #e8e8e6;
-  --color-border-focus: #c8c8c4;
-  --color-text-primary: #111110;
-  --color-text-secondary: #6b6b68;
-  --color-text-tertiary: #9b9b97;
+  --color-bg: #f4f1ea;
+  --color-bg-subtle: rgba(255, 255, 255, 0.65);
+  --color-bg-hover: #f0ebe2;
+  --color-border: rgba(28, 24, 20, 0.12);
+  --color-border-focus: rgba(28, 24, 20, 0.24);
+  --color-text-primary: #1f1a17;
+  --color-text-secondary: #6c6258;
+  --color-text-tertiary: #94887d;
   --color-text-inverse: #ffffff;
-  --color-accent: #1a1a1a;
-  --color-accent-hover: #2d2d2d;
-  --color-success: #1a7f4b;
-  --color-warning: #7a4f1a;
-  --color-danger: #c8302a;
+  --color-accent: #2a241f;
+  --color-accent-hover: #17130f;
+  --color-success: #20663f;
+  --color-warning: #87581d;
+  --color-danger: #ba3a32;
   --color-border-warm: #e8c87a;
-  --radius-base: 8px;
-  --radius-lg: 12px;
+  --radius-base: 12px;
+  --radius-lg: 22px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
@@ -35,9 +35,12 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--color-bg);
+  background:
+    radial-gradient(circle at top left, rgba(220, 200, 161, 0.45), transparent 32%),
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.8), transparent 24%),
+    linear-gradient(180deg, #fbf8f2 0%, var(--color-bg) 58%, #efe8dc 100%);
   color: var(--color-text-primary);
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -53,7 +56,7 @@ input {
 }
 
 .app-frame {
-  max-width: 480px;
+  max-width: 1180px;
   margin: 0 auto;
 }
 
@@ -71,7 +74,6 @@ input {
 .wordmark {
   font-size: 18px;
   font-weight: 700;
-  text-transform: lowercase;
 }
 
 .timer {
@@ -116,8 +118,10 @@ input {
 .panel {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  background: var(--color-bg);
+  background: rgba(255, 252, 247, 0.9);
+  backdrop-filter: blur(12px);
   padding: var(--space-5);
+  box-shadow: 0 10px 28px rgba(41, 33, 24, 0.08);
 }
 
 .panel-head {
@@ -331,7 +335,7 @@ input {
   border-radius: var(--radius-base);
   background: var(--color-bg);
   color: var(--color-text-primary);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'SFMono-Regular', monospace;
   font-size: 24px;
   font-weight: 600;
   letter-spacing: 0.2em;
@@ -350,7 +354,7 @@ input {
 }
 
 .mono {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'SFMono-Regular', monospace;
 }
 
 .stack-lg,

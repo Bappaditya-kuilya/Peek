@@ -1,7 +1,11 @@
 import { sanitizeFilename, safeBaseName } from './sanitize.js';
 
-const RELAY_HTTP_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : 'https://passr.dev/api';
-const RELAY_WS_URL = window.location.hostname === 'localhost' ? 'ws://localhost:3000' : 'wss://passr.dev/api';
+const RELAY_HTTP_URL = window.location.hostname === 'localhost'
+  ? 'http://localhost:3000'
+  : `${window.location.origin}/api`;
+const RELAY_WS_URL = window.location.hostname === 'localhost'
+  ? 'ws://localhost:3000'
+  : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api`;
 const IV_LENGTH = 12;
 const CHUNK_SIZE = 48 * 1024;
 const PACKET_MANIFEST = 1;
@@ -71,7 +75,26 @@ function classifyTimer(expiresAt) {
 }
 
 function html(strings, ...values) {
-  return strings.reduce((acc, string, index) => acc + string + (values[index] ?? ''), '');
+  return strings.reduce((acc, string, index) => {
+    const value = values[index];
+    if (value && typeof value === 'object' && value.__rawHtml !== undefined) {
+      return acc + string + value.__rawHtml;
+    }
+    return acc + string + escapeHtml(value ?? '');
+  }, '');
+}
+
+function rawHtml(value) {
+  return { __rawHtml: String(value) };
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function normalizeClipboardText(value) {
@@ -92,11 +115,11 @@ function fileIconSvg(type = 'doc') {
       ? '<rect x="5" y="6.5" width="6" height="5" stroke="var(--color-text-tertiary)" stroke-width="1" rx="0.5"></rect><path d="M5 10L7 8L8.5 9.5L10 8.5L11 10" stroke="var(--color-text-tertiary)" stroke-width="1"></path>'
       : '<line x1="5.5" y1="7" x2="10.5" y2="7" stroke="var(--color-text-tertiary)" stroke-width="1"></line><line x1="5.5" y1="9.5" x2="10.5" y2="9.5" stroke="var(--color-text-tertiary)" stroke-width="1"></line><line x1="5.5" y1="12" x2="8.5" y2="12" stroke="var(--color-text-tertiary)" stroke-width="1"></line>';
 
-  return html`<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  return rawHtml(html`<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <path d="M3 2C3 1.45 3.45 1 4 1H10L13 4V14C13 14.55 12.55 15 12 15H4C3.45 15 3 14.55 3 14V2Z" stroke="var(--color-text-tertiary)" stroke-width="1.2"></path>
     <path d="M10 1V4H13" stroke="var(--color-text-tertiary)" stroke-width="1.2"></path>
     ${lines}
-  </svg>`;
+  </svg>`);
 }
 
 function render() {
@@ -105,7 +128,7 @@ function render() {
   if (state.sessionEnded) {
     app.innerHTML = html`
       <div class="screen stack-lg">
-        <div class="screen-header"><div class="wordmark">passr</div></div>
+        <div class="screen-header"><div class="wordmark">Peek</div></div>
         <div class="stack-md">
           <h1 class="title">Session ended</h1>
           <div class="copy">The session is no longer available.</div>
@@ -118,7 +141,7 @@ function render() {
   if (state.decryptError) {
     app.innerHTML = html`
       <div class="screen stack-lg">
-        <div class="screen-header"><div class="wordmark">passr</div></div>
+        <div class="screen-header"><div class="wordmark">Peek</div></div>
         <div class="stack-md">
           <h1 class="title">Couldn't decrypt the files</h1>
           <div class="copy">The link may be incomplete or corrupted. Ask the sender to share the full link again.</div>
@@ -131,11 +154,11 @@ function render() {
   if (state.joinInfo.mode === 'code-entry') {
     app.innerHTML = html`
       <div class="screen stack-lg">
-        <div class="screen-header"><div class="wordmark">passr</div></div>
+        <div class="screen-header"><div class="wordmark">Peek</div></div>
         <div class="stack-md">
           <h1 class="title">Enter your 6-digit code</h1>
           <input id="code-input" class="code-input" inputmode="numeric" maxlength="6" pattern="[0-9]*" />
-          <div class="note">For full file access, scan the QR code instead.</div>
+          <div class="note">For full access, open the full QR link instead.</div>
         </div>
       </div>
     `;
@@ -146,11 +169,11 @@ function render() {
   if (state.joinInfo.mode === 'needs-full-link' && state.lookupResult) {
     app.innerHTML = html`
       <div class="screen stack-lg">
-        <div class="screen-header"><div class="wordmark">passr</div></div>
+        <div class="screen-header"><div class="wordmark">Peek</div></div>
         <div class="stack-md">
           <h1 class="title">Session found</h1>
           <div class="copy">Files available: ${state.lookupResult.filesAvailable}</div>
-          <div class="copy">Session found. To receive files, open the full link on this device — ask the sender to share it via message or email.</div>
+          <div class="copy">Session found. To receive files, open the full Peek link on this device and ask the sender to share it directly.</div>
         </div>
       </div>
     `;
@@ -160,7 +183,7 @@ function render() {
   if (!state.joined) {
     app.innerHTML = html`
       <div class="screen stack-lg">
-        <div class="screen-header"><div class="wordmark">passr</div></div>
+        <div class="screen-header"><div class="wordmark">Peek</div></div>
         <div class="stack-md">
           <h1 class="title">Connecting to device…</h1>
           <div class="copy">${state.slowJoin ? 'Taking longer than usual. Make sure the other device screen is on.' : ''}</div>
@@ -174,16 +197,16 @@ function render() {
   const rows = state.receivedFiles
     .map((file) => {
       const progress = file.progress > 0 && file.progress < 100
-        ? `<div class="progress"><div class="progress-bar" style="width:${file.progress}%"></div></div>`
+        ? rawHtml(`<div class="progress"><div class="progress-bar" style="width:${Number(file.progress)}%"></div></div>`)
         : '';
       const action = file.blob
-        ? `<button class="compact-button" data-download="${file.id}">Download</button>`
+        ? rawHtml(`<button class="compact-button" data-download="${Number(file.id)}">Download</button>`)
         : '';
       const status =
         file.status === 'done'
-          ? '<span class="file-status success">✓</span>'
-          : `<span class="file-status">${file.progress > 0 ? `${file.progress}%` : '—'}</span>`;
-      return html`<div class="row">
+          ? rawHtml('<span class="file-status success">✓</span>')
+          : rawHtml(`<span class="file-status">${file.progress > 0 ? `${Number(file.progress)}%` : '—'}</span>`);
+      return rawHtml(html`<div class="row">
         <div class="row-left">
           ${fileIconSvg(file.type?.startsWith('image/') ? 'image' : 'doc')}
           <div class="row-main">
@@ -193,19 +216,19 @@ function render() {
         </div>
         ${action || status}
         ${progress}
-      </div>`;
+      </div>`);
     })
     .join('');
 
   app.innerHTML = html`
     <div class="screen stack-lg">
       <div class="screen-header">
-        <div class="wordmark">passr</div>
+        <div class="wordmark">Peek</div>
         <div class="timer ${timerClass}">${formatTimer(state.expiresAt)}</div>
       </div>
 
       <div class="stack-md">
-        <h1 class="title">Files from other device</h1>
+        <h1 class="title">Files from the other device</h1>
         <div class="panel stack-sm">
           <div class="panel-head">
             <div class="title-sm">Instant clipboard</div>
@@ -227,8 +250,8 @@ function render() {
             </button>
           </div>
         </div>
-        <div class="list">${rows}</div>
-        ${state.receivedFiles.some((file) => file.blob) ? '<button class="button-primary" id="zip-download">Download all as ZIP</button>' : ''}
+        <div class="list">${rawHtml(rows)}</div>
+        ${state.receivedFiles.some((file) => file.blob) ? rawHtml('<button class="button-primary" id="zip-download">Download all as ZIP</button>') : ''}
       </div>
 
       <div class="divider"></div>
@@ -688,7 +711,7 @@ function bindReceiverActions() {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `passr-${state.joinInfo.sessionId.slice(0, 6)}.zip`;
+    anchor.download = `peek-${state.joinInfo.sessionId.slice(0, 6)}.zip`;
     anchor.click();
     URL.revokeObjectURL(url);
   });

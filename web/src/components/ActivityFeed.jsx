@@ -4,14 +4,19 @@ export function ActivityFeed({ items }) {
   }
 
   return (
-    <div className="section-panel">
-      <div className="subtle-list-title activity-feed-title">Recent activity</div>
-      <div className="activity-feed">
-      {items.slice(0, 5).map((item) => (
-        <div className="activity-item" key={item.id}>
-          {item.fileName} downloaded {item.when}
+    <div className="panel">
+      <div className="section-heading-row">
+        <div>
+          <div className="panel-label">Activity</div>
+          <h2 className="section-title">Recent events</h2>
         </div>
-      ))}
+      </div>
+      <div className="activity-feed">
+        {items.slice(0, 5).map((item) => (
+          <div className="activity-item" key={item.id}>
+            {item.fileName} downloaded {item.when}
+          </div>
+        ))}
       </div>
     </div>
   );

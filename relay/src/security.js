@@ -1,15 +1,23 @@
 const rateLimit = require('express-rate-limit');
 
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'https://passr.dev,http://localhost:5173,http://localhost:5174')
+const defaultOrigins = process.env.NODE_ENV === 'production'
+  ? 'https://peek.dev'
+  : 'https://peek.dev,http://localhost:5173,http://localhost:5174';
+
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || defaultOrigins)
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+const baseLimiterConfig = {
+  standardHeaders: true,
+  legacyHeaders: false,
+};
+
 const sessionCreateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
+  ...baseLimiterConfig,
   message: {
     error: 'Too many sessions created. Please wait.',
   },
@@ -18,8 +26,7 @@ const sessionCreateLimiter = rateLimit({
 const sessionLookupLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
+  ...baseLimiterConfig,
   message: {
     error: 'Too many lookup attempts. Please wait.',
   },
@@ -28,8 +35,7 @@ const sessionLookupLimiter = rateLimit({
 const viewUploadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
+  ...baseLimiterConfig,
   message: {
     error: 'Too many Peek uploads. Please wait.',
   },
@@ -38,8 +44,7 @@ const viewUploadLimiter = rateLimit({
 const viewFetchLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
+  ...baseLimiterConfig,
   message: {
     error: 'Too many Peek views. Please wait.',
   },
@@ -48,8 +53,7 @@ const viewFetchLimiter = rateLimit({
 const viewDeleteLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
+  ...baseLimiterConfig,
   message: {
     error: 'Too many Peek delete attempts. Please wait.',
   },

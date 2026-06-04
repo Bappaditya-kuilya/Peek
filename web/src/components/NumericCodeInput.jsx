@@ -22,6 +22,7 @@ export function NumericCodeInput({ autoFocus = false, onComplete }) {
         maxLength={6}
         pattern="[0-9]*"
         aria-invalid={error}
+        aria-label="6 digit session code"
         value={value}
         onChange={(event) => {
           setError(false);

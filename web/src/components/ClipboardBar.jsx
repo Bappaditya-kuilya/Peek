@@ -7,32 +7,31 @@ export function ClipboardBar({
   receivedText,
 }) {
   return (
-    <div className="section-panel clipboard-bar">
+    <div className="panel stack-sm">
       <div className="section-heading-row">
-        <h2 className="section-title" style={{ fontSize: '18px' }}>
-          Instant clipboard
-        </h2>
-        <div className="section-meta">{draftText.length}/{maxChars}</div>
+        <div>
+          <div className="panel-label">Clipboard bridge</div>
+          <h2 className="section-title">Instant clipboard</h2>
+        </div>
+        <div className="status-pill">{draftText.length}/{maxChars}</div>
       </div>
 
-      <div className="stack-sm">
-        <textarea
-          className="clipboard-textarea"
-          maxLength={maxChars}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder="Type or paste — sends automatically..."
-          rows={4}
-          value={draftText}
-        />
+      <textarea
+        className="clipboard-textarea"
+        maxLength={maxChars}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Type or paste here. It syncs to the connected device automatically."
+        rows={4}
+        value={draftText}
+      />
 
-        <div className="clipboard-received-row">
-          <div className="clipboard-received-copy">
-            <strong>Received:</strong> {receivedText || 'Waiting for the other device…'}
-          </div>
-          <button type="button" className="compact-button" disabled={!receivedText} onClick={onCopy}>
-            {copyLabel}
-          </button>
+      <div className="clipboard-received-row">
+        <div className="clipboard-received-copy">
+          <strong>Incoming text:</strong> {receivedText || 'Waiting for the other device…'}
         </div>
+        <button type="button" className="compact-button" disabled={!receivedText} onClick={onCopy}>
+          {copyLabel}
+        </button>
       </div>
     </div>
   );

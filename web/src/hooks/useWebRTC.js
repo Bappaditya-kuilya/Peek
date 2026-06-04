@@ -95,7 +95,7 @@ export function useWebRTC({
     bindConnectionEvents(connection);
 
     if (createChannel) {
-      const channel = connection.createDataChannel('passr-files', {
+      const channel = connection.createDataChannel('peek-files', {
         ordered: true,
       });
       dataChannelRef.current = channel;

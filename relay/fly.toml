@@ -1,4 +1,4 @@
-app = "passr-relay"
+app = "peek-relay"
 primary_region = "sin"
 
 [build]

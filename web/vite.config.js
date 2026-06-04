@@ -5,9 +5,7 @@ import { viteStaticCopy } from 'vite-plugin-static-copy';
 export default defineConfig({
   plugins: [
     react(),
-    // Single source of truth: the receiver lives in /receiver.
-    // Copy it into the build output (and serve it in dev) at /receiver
-    // so we never maintain a second copy under web/public/.
+    // Single source of truth: the static receiver lives in /web/receiver-src.
     viteStaticCopy({
       targets: [{ src: './receiver-src/*', dest: 'receiver' }],
     }),

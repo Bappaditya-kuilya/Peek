@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ActivityFeed } from './components/ActivityFeed.jsx';
 import { ClipboardBar } from './components/ClipboardBar.jsx';
@@ -37,6 +37,11 @@ function createLocalFileRecord(file, index) {
     status: 'queued',
     type: file.type,
   };
+}
+
+function stripFilePayload(fileRecord) {
+  const { file, ...rest } = fileRecord;
+  return rest;
 }
 
 function createTransport(dataChannelRef, fallbackSocketRef) {
@@ -81,7 +86,6 @@ function SenderApp() {
   const [activity, setActivity] = useState([]);
   const [statusMessage, setStatusMessage] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [now, setNow] = useState(Date.now());
   const [sessionEndedSummary, setSessionEndedSummary] = useState([]);
   const [peerConnected, setPeerConnected] = useState(false);
   const [transferStarted, setTransferStarted] = useState(false);
@@ -99,6 +103,7 @@ function SenderApp() {
   });
 
   const transportRef = useRef(null);
+  const nextFileIdRef = useRef(0);
   // Mirrors of the latest file lists so the session-close handler (which lives
   // in a [session] effect closure) can build an accurate ended-summary instead
   // of capturing stale empty arrays.
@@ -168,11 +173,6 @@ function SenderApp() {
   });
 
   transportRef.current = createTransport(webRtc.dataChannelRef, fallbackSocketRef);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(interval);
-  }, []);
 
   useEffect(() => {
     sharedFilesRef.current = sharedFiles;
@@ -268,21 +268,35 @@ function SenderApp() {
   }, [session]);
 
   function handleFilesAdded(fileList) {
-    const files = Array.from(fileList || []).map((file, index) => createLocalFileRecord(file, selectedFiles.length + index));
+    const files = Array.from(fileList || []).map((file) => {
+      const id = nextFileIdRef.current;
+      nextFileIdRef.current += 1;
+      return createLocalFileRecord(file, id);
+    });
+    if (!files.length) {
+      return;
+    }
+
     setSelectedFiles((current) => [...current, ...files]);
-    setSharedFiles((current) => [...current, ...files.map(({ file, ...rest }) => rest)]);
+    setSharedFiles((current) => [...current, ...files.map(stripFilePayload)]);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
     setScreen(SCREEN_PICKER);
   }
 
   async function handleGenerateSession() {
     if (!selectedFiles.length) return;
     setIsGenerating(true);
+    setStatusMessage('');
     try {
       await createSession({ fileCount: selectedFiles.length });
       setScreen(SCREEN_ACTIVE);
       setStatusMessage('Connecting to device…');
       setPeerConnected(false);
       setTransferStarted(false);
+    } catch (error) {
+      setStatusMessage(error?.message || 'Unable to create session.');
     } finally {
       setIsGenerating(false);
     }
@@ -385,172 +399,229 @@ function SenderApp() {
     }
   }
 
-  const timerClass = useMemo(() => {
-    if (!session) return '';
-    const remaining = session.expiresAt - now;
-    if (remaining <= 60 * 1000) return 'critical';
-    if (remaining <= 5 * 60 * 1000) return 'warning';
-    return '';
-  }, [now, session]);
-
   return (
     <div className="app-shell">
       <div className="app-frame">
         <input ref={fileInputRef} className="hidden-input" type="file" multiple onChange={(event) => handleFilesAdded(event.target.files)} />
 
         {screen === SCREEN_HOME ? (
-          <div className="screen stack-lg">
-            <div className="screen-header">
-              <div className="wordmark">passr</div>
+          <div className="workspace">
+            <div className="workspace-main">
+              <div className="hero-card stack-lg">
+                <div className="workspace-header">
+                  <div className="brand-block">
+                    <div className="wordmark">Peek</div>
+                    <div className="eyebrow">Shared Device Transfer</div>
+                  </div>
+                  <Link className="link-chip" to="/r">
+                    Have a code?
+                  </Link>
+                </div>
+
+                <div className="stack-md">
+                  <h1 className="workspace-title">Move files into a shared browser without friction.</h1>
+                  <p className="hero-subtitle">
+                    Built for labs, library PCs, kiosks, and temporary machines where installs and sign-ins are the slowest part of the job.
+                  </p>
+                </div>
+
+                <div className="hero-feature-list">
+                  <div className="hero-feature">
+                    <strong>No install</strong>
+                    <span>The receiving side opens as a normal browser page.</span>
+                  </div>
+                  <div className="hero-feature">
+                    <strong>No account</strong>
+                    <span>One session, one QR, and automatic expiry after 60 minutes.</span>
+                  </div>
+                  <div className="hero-feature">
+                    <strong>Encrypted fallback</strong>
+                    <span>Relay fallback carries ciphertext only when direct local transfer fails.</span>
+                  </div>
+                  <div className="hero-feature">
+                    <strong>Two-way session</strong>
+                    <span>The other device can send files back without starting a new room.</span>
+                  </div>
+                </div>
+
+                <div className="stack-sm">
+                  <button type="button" className="button-primary" onClick={triggerFilePicker}>Start sharing files</button>
+                  <div className="helper-copy">Choose files first, then create the short-lived session.</div>
+                </div>
+              </div>
             </div>
-            <div className="hero-panel stack-lg">
-              <div className="stack-sm">
-                <div className="hero-kicker">Shared computer transfer</div>
-                <h1 className="hero-title">Scan once. Transfer like the file was already there.</h1>
-                <p className="hero-subtitle">
-                  Built for labs, library PCs, kiosks, and any browser where installs and sign-ins get in the way.
-                </p>
+
+            <aside className="workspace-side">
+              <div className="panel stack-md">
+                <div>
+                  <div className="panel-label">How it works</div>
+                  <h2 className="section-title">Three short steps</h2>
+                </div>
+                <div className="steps-list">
+                  <div className="step-row">
+                    <strong>1. Select the files</strong>
+                    <span className="helper-copy">Prepare the transfer before the second device joins.</span>
+                  </div>
+                  <div className="step-row">
+                    <strong>2. Open the session</strong>
+                    <span className="helper-copy">Peek generates a QR link and fallback code for the other device.</span>
+                  </div>
+                  <div className="step-row">
+                    <strong>3. Transfer and close</strong>
+                    <span className="helper-copy">Send, receive, and end the session when you are finished.</span>
+                  </div>
+                </div>
               </div>
 
-              <div className="hero-feature-list">
-                <div className="hero-feature">
-                  <strong>No install</strong>
-                  <span>The receiver opens in a normal browser tab.</span>
+              <div className="panel stack-md">
+                <div>
+                  <div className="panel-label">Security posture</div>
+                  <h2 className="section-title">Designed for risky environments</h2>
                 </div>
-                <div className="hero-feature">
-                  <strong>No account</strong>
-                  <span>One session, one QR, auto-expiry in 60 minutes.</span>
-                </div>
-                <div className="hero-feature">
-                  <strong>Encrypted relay fallback</strong>
-                  <span>Still works when direct local transfer fails.</span>
-                </div>
-                <div className="hero-feature">
-                  <strong>Two-way</strong>
-                  <span>The other device can send files back in the same session.</span>
+                <div className="security-list">
+                  <div className="security-row">
+                    <strong>Client-side encryption</strong>
+                    <span className="helper-copy">Transfer packets are encrypted in the browser before fallback relay transport is used.</span>
+                  </div>
+                  <div className="security-row">
+                    <strong>Short-lived sessions</strong>
+                    <span className="helper-copy">Sessions expire automatically and can also be killed manually from either side.</span>
+                  </div>
+                  <div className="security-row">
+                    <strong>Minimal ceremony</strong>
+                    <span className="helper-copy">No account, no install, and no permanent workspace left behind on public hardware.</span>
+                  </div>
                 </div>
               </div>
-            </div>
-            <button type="button" className="button-primary" onClick={triggerFilePicker}>Select files to share</button>
-            <div className="screen-divider" />
-            <Link className="muted-link" to="/r">Already have a code?</Link>
+            </aside>
           </div>
         ) : null}
 
         {screen === SCREEN_PICKER ? (
           <FilePicker
             files={selectedFiles}
+            isGenerating={isGenerating}
             onAddFiles={triggerFilePicker}
             onBack={() => setScreen(SCREEN_HOME)}
             onGenerate={handleGenerateSession}
             onRemoveFile={handleRemoveFile}
+            statusMessage={statusMessage}
           />
         ) : null}
 
         {screen === SCREEN_ACTIVE && session ? (
-          <div className="screen stack-lg">
-            <div className="screen-header">
-              <div className="wordmark">passr</div>
-              <div className={`header-timer ${timerClass}`}>{formatTimer(session.expiresAt)}</div>
-            </div>
-
-            <QRDisplay expiresAt={session.expiresAt} joinUrl={session.joinUrl} numericCode={session.numericCode} />
-            <div className="metric-strip">
-              <div className="metric-cell">
-                <span className="metric-value">{sharedFiles.length}</span>
-                <span className="metric-label">Files shared</span>
-              </div>
-              <div className="metric-cell">
-                <span className="metric-value">{receivedFiles.filter((file) => file.status === 'done').length}</span>
-                <span className="metric-label">Files received</span>
-              </div>
-              <div className="metric-cell">
-                <span className="metric-value">{peerConnected ? 'Live' : 'Waiting'}</span>
-                <span className="metric-label">Session state</span>
-              </div>
-            </div>
-            <div className="screen-divider" />
-            <ActivityFeed items={activity} />
-            <div className="screen-divider" />
-
-            <ClipboardBar
-              copyLabel={clipboard.copyState === 'copied' ? 'Copied' : clipboard.copyState === 'failed' ? 'Retry copy' : 'Copy'}
-              draftText={clipboard.draftText}
-              maxChars={clipboard.maxChars}
-              onChange={clipboard.setDraftText}
-              onCopy={clipboard.copyReceivedText}
-              receivedText={clipboard.receivedText}
-            />
-            <div className="screen-divider" />
-
-            <ViewShare
-              expiresIn={peekExpiresIn}
-              file={peekFile}
-              generatedUrl={peekUrl}
-              isBusy={peekBusy}
-              onExpiresChange={setPeekExpiresIn}
-              onFileChange={setPeekFile}
-              onGenerate={handleCreatePeekLink}
-              onToggleOnceOnly={setPeekOnceOnly}
-              onceOnly={peekOnceOnly}
-              statusMessage={peekStatus}
-            />
-            <div className="screen-divider" />
-
-            <div className="section-panel">
-              <div className="subtle-list-title">Shared by you</div>
-              <div className="file-list">
-                {sharedFiles.map((file) => (
-                  <FileRow
-                    key={file.id}
-                    action={
-                      selectedFiles.find((entry) => entry.id === file.id)?.file ? (
-                        <button
-                          type="button"
-                          className="compact-button"
-                          onClick={() => handleSessionPeek(selectedFiles.find((entry) => entry.id === file.id))}
-                        >
-                          Peek
-                        </button>
-                      ) : null
-                    }
-                    file={file}
-                    progress={file.progress}
-                    status={file.status}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {statusMessage ? <div className="status-copy">{statusMessage}</div> : null}
-            {!peerConnected ? <div className="status-copy">Waiting for the other device…</div> : null}
-            {incomingPeekUrl ? (
-              <div className="section-panel view-share-panel">
-                <div className="section-heading-row">
-                  <h2 className="section-title" style={{ fontSize: '18px' }}>
-                    Peek ready
-                  </h2>
+          <div className="workspace">
+            <div className="workspace-main">
+              <div className="workspace-shell stack-lg">
+                <div className="workspace-header compact">
+                  <div className="brand-block">
+                    <div className="wordmark">Peek</div>
+                    <div className="eyebrow">Live session</div>
+                  </div>
+                  <div className={`status-pill ${peerConnected ? 'live' : 'waiting'}`}>
+                    {peerConnected ? 'Peer connected' : 'Waiting for peer'}
+                  </div>
                 </div>
-                <div className="stack-sm">
-                  <div className="status-copy">The other device shared a view-only Peek.</div>
+
+                <div className="metric-strip">
+                  <div className="metric-cell">
+                    <span className="metric-value">{sharedFiles.length}</span>
+                    <span className="metric-label">Files staged</span>
+                  </div>
+                  <div className="metric-cell">
+                    <span className="metric-value">{receivedFiles.filter((file) => file.status === 'done').length}</span>
+                    <span className="metric-label">Files received</span>
+                  </div>
+                  <div className="metric-cell">
+                    <span className="metric-value">{formatTimer(session.expiresAt)}</span>
+                    <span className="metric-label">Time left</span>
+                  </div>
+                </div>
+
+                {statusMessage ? <div className="notice-banner danger">{statusMessage}</div> : null}
+                {!peerConnected ? <div className="notice-banner warning">Waiting for the other device to join and keep the session alive.</div> : null}
+
+                <div className="panel">
+                  <div className="section-heading-row">
+                    <div>
+                      <div className="panel-label">Your transfer set</div>
+                      <h2 className="section-title">Files staged for this session</h2>
+                    </div>
+                  </div>
+                  <div className="file-list">
+                    {sharedFiles.map((file) => {
+                      const selectedEntry = selectedFiles.find((entry) => entry.id === file.id);
+                      return (
+                        <FileRow
+                          key={file.id}
+                          action={
+                            selectedEntry?.file ? (
+                              <button
+                                type="button"
+                                className="compact-button"
+                                onClick={() => handleSessionPeek(selectedEntry)}
+                              >
+                                Peek
+                              </button>
+                            ) : null
+                          }
+                          file={file}
+                          progress={file.progress}
+                          status={file.status}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <ReceivePanel
+                  files={receivedFiles}
+                  onDownload={downloadFile}
+                  onSelectFiles={() => sendBackInputRef.current?.click()}
+                  sessionId={session.sessionId}
+                  title="Files received"
+                />
+
+                <ClipboardBar
+                  copyLabel={clipboard.copyState === 'copied' ? 'Copied' : clipboard.copyState === 'failed' ? 'Retry copy' : 'Copy'}
+                  draftText={clipboard.draftText}
+                  maxChars={clipboard.maxChars}
+                  onChange={clipboard.setDraftText}
+                  onCopy={clipboard.copyReceivedText}
+                  receivedText={clipboard.receivedText}
+                />
+              </div>
+            </div>
+
+            <aside className="workspace-side">
+              <QRDisplay expiresAt={session.expiresAt} joinUrl={session.joinUrl} numericCode={session.numericCode} />
+              <ViewShare
+                expiresIn={peekExpiresIn}
+                file={peekFile}
+                generatedUrl={peekUrl}
+                isBusy={peekBusy}
+                onExpiresChange={setPeekExpiresIn}
+                onFileChange={setPeekFile}
+                onGenerate={handleCreatePeekLink}
+                onToggleOnceOnly={setPeekOnceOnly}
+                onceOnly={peekOnceOnly}
+                statusMessage={peekStatus}
+              />
+              {incomingPeekUrl ? (
+                <div className="panel stack-sm">
+                  <div>
+                    <div className="panel-label">Incoming view-only share</div>
+                    <h2 className="section-title">Peek ready</h2>
+                  </div>
+                  <div className="helper-copy">The other device shared a temporary view-only Peek.</div>
                   <button type="button" className="button-primary" onClick={() => window.open(incomingPeekUrl, '_blank', 'noopener,noreferrer')}>
                     Open Peek in new tab
                   </button>
                 </div>
-              </div>
-            ) : null}
-
-            <ReceivePanel
-              files={receivedFiles}
-              onDownload={downloadFile}
-              onSelectFiles={() => sendBackInputRef.current?.click()}
-              sessionId={session.sessionId}
-              title="Received from them"
-            />
-
-            <div className="bottom-action">
+              ) : null}
+              <ActivityFeed items={activity} />
               <KillSwitch onConfirm={handleKillSession} />
-            </div>
+            </aside>
 
             <input ref={sendBackInputRef} className="hidden-input" type="file" multiple onChange={handleSendBackFiles} />
           </div>
@@ -559,7 +630,7 @@ function SenderApp() {
         {screen === SCREEN_ENDED ? (
           <div className="screen stack-lg">
             <div className="screen-header">
-              <div className="wordmark">passr</div>
+              <div className="wordmark">Peek</div>
             </div>
             <div className="stack-md">
               <h1 className="section-title">Session ended</h1>
@@ -573,7 +644,7 @@ function SenderApp() {
                   </div>
                 ))}
               </div>
-              <div className="hero-copy">All files transferred.</div>
+              <div className="hero-copy">This Peek session is closed. Start a new one whenever you need.</div>
             </div>
             <button
               type="button"
@@ -583,10 +654,14 @@ function SenderApp() {
                 setSharedFiles([]);
                 setReceivedFiles([]);
                 setActivity([]);
+                nextFileIdRef.current = 0;
+                if (fileInputRef.current) {
+                  fileInputRef.current.value = '';
+                }
                 setScreen(SCREEN_HOME);
               }}
             >
-              Share more files
+              Start another Peek session
             </button>
           </div>
         ) : null}
@@ -616,19 +691,29 @@ function ReceiverLookup() {
   return (
     <div className="app-shell">
       <div className="app-frame">
-        <div className="screen stack-lg">
-          <div className="screen-header">
-            <div className="wordmark">passr</div>
-          </div>
-          <div className="stack-md">
-            <h1 className="section-title">Enter your 6-digit code</h1>
-            <NumericCodeInput autoFocus onComplete={handleLookup} />
-            <div className="receiver-note">For full file access, scan the QR code instead.</div>
-            <div className="empty-panel">
-              <div className="subtle-list-title">What this code does</div>
-              <div className="hero-copy">It confirms the session exists, but it does not authenticate this device.</div>
+        <div className="workspace">
+          <div className="workspace-main">
+            <div className="workspace-shell stack-lg">
+              <div className="brand-block">
+                <div className="wordmark">Peek</div>
+                <div className="eyebrow">Join by code</div>
+              </div>
+              <div className="stack-md">
+                <h1 className="section-title">Enter your 6-digit code</h1>
+                <div className="section-subtitle">Use this only when you cannot open the full QR link on the receiving device.</div>
+                <NumericCodeInput autoFocus onComplete={handleLookup} />
+              </div>
             </div>
           </div>
+          <aside className="workspace-side">
+            <div className="panel stack-md">
+              <div>
+                <div className="panel-label">What code lookup does</div>
+                <h2 className="section-title">Lookup, not authentication</h2>
+              </div>
+              <div className="helper-copy">It confirms the session exists, but it does not carry the encryption key. For actual file access, the full link is still required.</div>
+            </div>
+          </aside>
         </div>
       </div>
     </div>
@@ -834,26 +919,36 @@ function ReceiverSession() {
     return (
       <div className="app-shell">
         <div className="app-frame">
-          <div className="screen stack-lg">
-            <div className="screen-header">
-              <div className="wordmark">passr</div>
-            </div>
-            <div className="stack-md">
-              <h1 className="section-title">Session found</h1>
-              <div className="hero-copy">Files available: {lookupResult?.filesAvailable ?? 'unknown'}</div>
-              {lookupResult?.expiresAt ? (
-                <div className="status-copy">Session expires in {formatTimer(lookupResult.expiresAt)}</div>
-              ) : null}
-              <div className="empty-panel">
-                <div className="subtle-list-title">Next step</div>
-                <div className="hero-copy">
-                Session found. To receive files, open the full link on this device — ask the sender to share it via message or email.
+          <div className="workspace">
+            <div className="workspace-main">
+              <div className="workspace-shell stack-lg">
+                <div className="brand-block">
+                  <div className="wordmark">Peek</div>
+                  <div className="eyebrow">Session lookup</div>
                 </div>
+                <div className="stack-md">
+                  <h1 className="section-title">Session found</h1>
+                  <div className="hero-copy">Files available: {lookupResult?.filesAvailable ?? 'unknown'}</div>
+                  {lookupResult?.expiresAt ? (
+                    <div className="status-pill">Expires in {formatTimer(lookupResult.expiresAt)}</div>
+                  ) : null}
+                </div>
+                <button type="button" className="button-secondary" onClick={() => navigate('/r')}>
+                  Back
+                </button>
               </div>
             </div>
-            <button type="button" className="button-secondary" onClick={() => navigate('/r')}>
-              Back
-            </button>
+            <aside className="workspace-side">
+              <div className="panel stack-md">
+                <div>
+                  <div className="panel-label">Next step</div>
+                  <h2 className="section-title">You still need the full link</h2>
+                </div>
+                <div className="helper-copy">
+                  Code lookup only tells you the session exists. To receive files, open the full Peek link on this device and ask the sender to share it directly.
+                </div>
+              </div>
+            </aside>
           </div>
         </div>
       </div>
@@ -864,13 +959,16 @@ function ReceiverSession() {
     return (
       <div className="app-shell">
         <div className="app-frame">
-          <div className="screen stack-lg">
-            <div className="screen-header">
-              <div className="wordmark">passr</div>
-            </div>
-            <div className="stack-md">
-              <h1 className="section-title">Connecting to device…</h1>
-              {statusMessage ? <div className={`status-copy ${statusDanger ? 'danger' : ''}`}>{statusMessage}</div> : null}
+          <div className="workspace">
+            <div className="workspace-main">
+              <div className="workspace-shell stack-lg">
+                <div className="brand-block">
+                  <div className="wordmark">Peek</div>
+                  <div className="eyebrow">Receiver session</div>
+                </div>
+                <h1 className="section-title">Connecting to device…</h1>
+                {statusMessage ? <div className={`notice-banner ${statusDanger ? 'danger' : 'warning'}`}>{statusMessage}</div> : null}
+              </div>
             </div>
           </div>
         </div>
@@ -881,29 +979,79 @@ function ReceiverSession() {
   return (
     <div className="app-shell">
       <div className="app-frame">
-        <div className="screen stack-lg">
-          <div className="screen-header">
-            <div className="wordmark">passr</div>
-            <div className={`header-timer ${timerClass}`}>{formatTimer(expiresAt)}</div>
+        <div className="workspace">
+          <div className="workspace-main">
+            <div className="workspace-shell stack-lg">
+              <div className="workspace-header compact">
+                <div className="brand-block">
+                  <div className="wordmark">Peek</div>
+                  <div className="eyebrow">Receiving session</div>
+                </div>
+                <div className={`header-timer ${timerClass}`}>{formatTimer(expiresAt)}</div>
+              </div>
+
+              <div className="metric-strip">
+                <div className="metric-cell">
+                  <span className="metric-value">{receivedFiles.length}</span>
+                  <span className="metric-label">Incoming files</span>
+                </div>
+                <div className="metric-cell">
+                  <span className="metric-value">{receivedFiles.filter((file) => file.blob).length}</span>
+                  <span className="metric-label">Ready to save</span>
+                </div>
+                <div className="metric-cell">
+                  <span className="metric-value">Live</span>
+                  <span className="metric-label">Session state</span>
+                </div>
+              </div>
+
+              {statusMessage ? <div className={`notice-banner ${statusDanger ? 'danger' : 'warning'}`}>{statusMessage}</div> : null}
+
+              <div className="panel">
+                <div className="section-heading-row">
+                  <div>
+                    <div className="panel-label">Incoming transfer</div>
+                    <h2 className="section-title">Files from the other device</h2>
+                  </div>
+                </div>
+                <div className="file-list">
+                  {receivedFiles.map((file) => (
+                    <FileRow
+                      key={file.id}
+                      file={file}
+                      progress={file.progress}
+                      status={file.status}
+                      action={
+                        file.blob ? (
+                          <button type="button" className="compact-button" onClick={() => downloadFile(file)}>
+                            Download
+                          </button>
+                        ) : null
+                      }
+                    />
+                  ))}
+                </div>
+
+                {receivedFiles.some((file) => file.blob) ? (
+                  <div className="stack-sm" style={{ marginTop: '16px' }}>
+                    <button type="button" className="button-primary" onClick={() => downloadAllAsZip(receivedFiles.filter((file) => file.blob), sessionId)}>
+                      Download all as ZIP
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+
+              <ReceivePanel
+                files={outgoingFiles}
+                onDownload={() => {}}
+                onSelectFiles={() => sendBackInputRef.current?.click()}
+                sessionId={sessionId}
+                title="Send files back"
+              />
+            </div>
           </div>
 
-          <div className="stack-md">
-            <h1 className="section-title">Files from other device</h1>
-            <div className="metric-strip">
-              <div className="metric-cell">
-                <span className="metric-value">{receivedFiles.length}</span>
-                <span className="metric-label">Incoming files</span>
-              </div>
-              <div className="metric-cell">
-                <span className="metric-value">{receivedFiles.filter((file) => file.blob).length}</span>
-                <span className="metric-label">Ready to download</span>
-              </div>
-              <div className="metric-cell">
-                <span className="metric-value">Live</span>
-                <span className="metric-label">Session state</span>
-              </div>
-            </div>
-
+          <aside className="workspace-side">
             <ClipboardBar
               copyLabel={clipboard.copyState === 'copied' ? 'Copied' : clipboard.copyState === 'failed' ? 'Retry copy' : 'Copy'}
               draftText={clipboard.draftText}
@@ -912,77 +1060,38 @@ function ReceiverSession() {
               onCopy={clipboard.copyReceivedText}
               receivedText={clipboard.receivedText}
             />
-
             {incomingPeekUrl ? (
-              <div className="section-panel view-share-panel">
-                <div className="section-heading-row">
-                  <h2 className="section-title" style={{ fontSize: '18px' }}>
-                    Peek ready
-                  </h2>
+              <div className="panel stack-sm">
+                <div>
+                  <div className="panel-label">Incoming view-only share</div>
+                  <h2 className="section-title">Peek ready</h2>
                 </div>
-                <div className="stack-sm">
-                  <div className="status-copy">The other device shared a view-only Peek.</div>
-                  <button type="button" className="button-primary" onClick={() => window.open(incomingPeekUrl, '_blank', 'noopener,noreferrer')}>
-                    Open Peek in new tab
-                  </button>
-                </div>
+                <div className="helper-copy">The other device shared a temporary view-only Peek.</div>
+                <button type="button" className="button-primary" onClick={() => window.open(incomingPeekUrl, '_blank', 'noopener,noreferrer')}>
+                  Open Peek in new tab
+                </button>
               </div>
             ) : null}
-
-            <div className="section-panel">
-              <div className="file-list">
-                {receivedFiles.map((file) => (
-                  <FileRow
-                    key={file.id}
-                    file={file}
-                    progress={file.progress}
-                    status={file.status}
-                    action={
-                      file.blob ? (
-                        <button type="button" className="compact-button" onClick={() => downloadFile(file)}>
-                          Download
-                        </button>
-                      ) : null
-                    }
-                  />
-                ))}
+            <div className="panel stack-sm">
+              <div>
+                <div className="panel-label">End session</div>
+                <div className="helper-copy">Close this receiver session and disconnect both devices.</div>
               </div>
-            </div>
-
-            {receivedFiles.some((file) => file.blob) ? (
-              <button type="button" className="button-primary" onClick={() => downloadAllAsZip(receivedFiles.filter((file) => file.blob), sessionId)}>
-                Download all as ZIP
+              <button
+                type="button"
+                className={`button-danger ${confirmKill ? 'confirm' : ''}`}
+                onClick={() => {
+                  if (!confirmKill) {
+                    setConfirmKill(true);
+                    return;
+                  }
+                  fallbackSocketRef.current?.send(JSON.stringify({ type: 'kill-session' }));
+                }}
+              >
+                {confirmKill ? 'Confirm end session' : 'End session'}
               </button>
-            ) : null}
-          </div>
-
-          <div className="screen-divider" />
-
-          <ReceivePanel
-            files={outgoingFiles}
-            onDownload={() => {}}
-            onSelectFiles={() => sendBackInputRef.current?.click()}
-            sessionId={sessionId}
-            title="Send files back"
-          />
-
-          {statusMessage ? <div className={`status-copy ${statusDanger ? 'danger' : ''}`}>{statusMessage}</div> : null}
-
-          <div className="bottom-action">
-            <button
-              type="button"
-              className={`button-danger ${confirmKill ? 'confirm' : ''}`}
-              onClick={() => {
-                if (!confirmKill) {
-                  setConfirmKill(true);
-                  return;
-                }
-                fallbackSocketRef.current?.send(JSON.stringify({ type: 'kill-session' }));
-              }}
-            >
-              {confirmKill ? 'Tap again to end session' : 'End session'}
-            </button>
-          </div>
+            </div>
+          </aside>
 
           <input ref={sendBackInputRef} className="hidden-input" type="file" multiple onChange={handleSendBackFiles} />
         </div>

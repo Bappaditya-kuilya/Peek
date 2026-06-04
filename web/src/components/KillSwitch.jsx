@@ -24,12 +24,18 @@ export function KillSwitch({ onConfirm }) {
   }
 
   return (
-    <button
-      type="button"
-      className={`button-danger ${confirming ? 'confirm' : ''}`}
-      onClick={handleClick}
-    >
-      {confirming ? 'Tap again to end session' : 'End session'}
-    </button>
+    <div className="panel stack-sm">
+      <div>
+        <div className="panel-label">Danger zone</div>
+        <div className="helper-copy">End the session immediately and disconnect both devices.</div>
+      </div>
+      <button
+        type="button"
+        className={`button-danger ${confirming ? 'confirm' : ''}`}
+        onClick={handleClick}
+      >
+        {confirming ? 'Confirm end session' : 'End session'}
+      </button>
+    </div>
   );
 }
