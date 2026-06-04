@@ -8,11 +8,17 @@ const PACKET_MANIFEST = 1;
 const PACKET_CHUNK = 2;
 const PACKET_FILE_COMPLETE = 3;
 const PACKET_DOWNLOAD_NOTICE = 4;
+const MAX_CLIPBOARD_CHARS = 2000;
+const CLIPBOARD_DEBOUNCE_MS = 500;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 const state = {
   activity: [],
+  clipboardCopyState: 'idle',
+  clipboardDraft: '',
+  clipboardReceived: '',
+  clipboardSendTimer: null,
   dataChannel: null,
   decryptError: false,
   filesToSend: [],
@@ -66,6 +72,18 @@ function classifyTimer(expiresAt) {
 
 function html(strings, ...values) {
   return strings.reduce((acc, string, index) => acc + string + (values[index] ?? ''), '');
+}
+
+function normalizeClipboardText(value) {
+  return String(value || '').replace(/\r\n?/g, '\n').slice(0, MAX_CLIPBOARD_CHARS);
+}
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return window.btoa(binary);
 }
 
 function fileIconSvg(type = 'doc') {
@@ -188,6 +206,27 @@ function render() {
 
       <div class="stack-md">
         <h1 class="title">Files from other device</h1>
+        <div class="panel stack-sm">
+          <div class="panel-head">
+            <div class="title-sm">Instant clipboard</div>
+            <div class="panel-meta">${state.clipboardDraft.length}/${MAX_CLIPBOARD_CHARS}</div>
+          </div>
+          <textarea
+            id="clipboard-input"
+            class="clipboard-textarea"
+            maxlength="${MAX_CLIPBOARD_CHARS}"
+            placeholder="Type or paste — sends automatically..."
+            rows="4"
+          >${state.clipboardDraft}</textarea>
+          <div class="clipboard-row">
+            <div class="copy">
+              <strong class="copy-strong">Received:</strong> ${state.clipboardReceived || 'Waiting for the other device…'}
+            </div>
+            <button class="compact-button" id="clipboard-copy" ${state.clipboardReceived ? '' : 'disabled'}>
+              ${state.clipboardCopyState === 'copied' ? 'Copied' : state.clipboardCopyState === 'failed' ? 'Retry copy' : 'Copy'}
+            </button>
+          </div>
+        </div>
         <div class="list">${rows}</div>
         ${state.receivedFiles.some((file) => file.blob) ? '<button class="button-primary" id="zip-download">Download all as ZIP</button>' : ''}
       </div>
@@ -275,6 +314,17 @@ async function decryptChunk(key, buffer) {
   const iv = bytes.slice(0, IV_LENGTH);
   const ciphertext = bytes.slice(IV_LENGTH);
   return window.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+}
+
+async function encryptClipboardText(text) {
+  const encrypted = await encryptChunk(state.key, encoder.encode(normalizeClipboardText(text)));
+  return bytesToBase64(new Uint8Array(encrypted));
+}
+
+async function decryptClipboardText(payloadBase64) {
+  const encryptedBytes = base64ToBytes(String(payloadBase64 || ''));
+  const decrypted = await decryptChunk(state.key, encryptedBytes.buffer);
+  return normalizeClipboardText(decoder.decode(decrypted));
 }
 
 function concatBuffers(parts) {
@@ -458,6 +508,17 @@ async function handleBinaryMessage(buffer) {
   }
 }
 
+async function handleClipboardMessage(message) {
+  if (!message?.payload || !state.key) {
+    return;
+  }
+
+  try {
+    state.clipboardReceived = await decryptClipboardText(message.payload);
+    render();
+  } catch {}
+}
+
 async function setupConnection() {
   state.key = await importKey(state.joinInfo.keyBase64);
   state.socket = new WebSocket(RELAY_WS_URL);
@@ -519,6 +580,9 @@ async function setupConnection() {
       case 'webrtc-candidate':
         await state.peerConnection.addIceCandidate(message.candidate);
         break;
+      case 'clipboard-push':
+        await handleClipboardMessage(message);
+        break;
       case 'peer-disconnected':
         state.statusMessage = 'The other device disconnected.';
         state.statusDanger = false;
@@ -543,6 +607,43 @@ async function setupConnection() {
 }
 
 function bindReceiverActions() {
+  const clipboardInput = document.getElementById('clipboard-input');
+  clipboardInput?.addEventListener('input', (event) => {
+    state.clipboardDraft = normalizeClipboardText(event.target.value);
+    if (event.target.value !== state.clipboardDraft) {
+      event.target.value = state.clipboardDraft;
+    }
+
+    if (state.clipboardSendTimer) {
+      window.clearTimeout(state.clipboardSendTimer);
+    }
+
+    state.clipboardSendTimer = window.setTimeout(async () => {
+      if (state.socket?.readyState !== WebSocket.OPEN || !state.key) {
+        return;
+      }
+
+      try {
+        const payload = await encryptClipboardText(state.clipboardDraft);
+        state.socket.send(JSON.stringify({ type: 'clipboard-push', payload }));
+      } catch {}
+    }, CLIPBOARD_DEBOUNCE_MS);
+  });
+
+  document.getElementById('clipboard-copy')?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(state.clipboardReceived);
+      state.clipboardCopyState = 'copied';
+    } catch {
+      state.clipboardCopyState = 'failed';
+    }
+    render();
+    window.setTimeout(() => {
+      state.clipboardCopyState = 'idle';
+      render();
+    }, 1500);
+  });
+
   document.querySelectorAll('[data-download]').forEach((button) => {
     button.addEventListener('click', async () => {
       const fileId = Number(button.getAttribute('data-download'));

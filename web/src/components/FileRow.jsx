@@ -11,6 +11,7 @@ function inferIconType(fileName = '', mimeType = '') {
 export function FileRow({
   action,
   file,
+  meta,
   onRemove,
   progress,
   removable = false,
@@ -29,6 +30,7 @@ export function FileRow({
         <div className="file-row-main">
           <span className="file-name">{file.name}</span>
           <span className="file-size">{formatBytes(file.size)}</span>
+          {meta ? <span className="file-size">{meta}</span> : null}
         </div>
       </div>
 

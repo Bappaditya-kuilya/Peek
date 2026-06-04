@@ -1,17 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ActivityFeed } from './components/ActivityFeed.jsx';
+import { ClipboardBar } from './components/ClipboardBar.jsx';
 import { FilePicker } from './components/FilePicker.jsx';
 import { FileRow } from './components/FileRow.jsx';
 import { KillSwitch } from './components/KillSwitch.jsx';
 import { NumericCodeInput } from './components/NumericCodeInput.jsx';
 import { QRDisplay } from './components/QRDisplay.jsx';
 import { ReceivePanel } from './components/ReceivePanel.jsx';
+import { ViewShare } from './components/ViewShare.jsx';
+import { useClipboard } from './hooks/useClipboard.js';
 import { useSession } from './hooks/useSession.js';
 import { useTransfer } from './hooks/useTransfer.js';
 import { useWebRTC } from './hooks/useWebRTC.js';
 import { formatTimer } from './utils/format.js';
 import { safeBaseName } from './utils/sanitize.js';
+import { createViewUrl, encryptViewFile, uploadEncryptedView } from './utils/viewCrypto.js';
 import { downloadAllAsZip } from './utils/zip.js';
 import { importKeyFromBase64 } from './hooks/useCrypto.js';
 
@@ -81,7 +85,18 @@ function SenderApp() {
   const [sessionEndedSummary, setSessionEndedSummary] = useState([]);
   const [peerConnected, setPeerConnected] = useState(false);
   const [transferStarted, setTransferStarted] = useState(false);
+  const [peekFile, setPeekFile] = useState(null);
+  const [peekExpiresIn, setPeekExpiresIn] = useState(15);
+  const [peekOnceOnly, setPeekOnceOnly] = useState(false);
+  const [peekUrl, setPeekUrl] = useState('');
+  const [peekBusy, setPeekBusy] = useState(false);
+  const [peekStatus, setPeekStatus] = useState('');
+  const [incomingPeekUrl, setIncomingPeekUrl] = useState('');
   const { createSession, killSession, session } = useSession();
+  const clipboard = useClipboard({
+    encryptionKey: session?.key || null,
+    socketRef: fallbackSocketRef,
+  });
 
   const transportRef = useRef(null);
   // Mirrors of the latest file lists so the session-close handler (which lives
@@ -217,6 +232,12 @@ function SenderApp() {
         case 'webrtc-candidate':
           await webRtc.addIceCandidate(message.candidate);
           break;
+        case 'clipboard-push':
+          await clipboard.handleClipboardMessage(message);
+          break;
+        case 'view-share-push':
+          setIncomingPeekUrl(message.url || '');
+          break;
         case 'peer-disconnected':
           setStatusMessage('The other device disconnected.');
           break;
@@ -304,6 +325,64 @@ function SenderApp() {
     if (!files.length) return;
     await transfer.sendFiles(files, transportRef.current);
     event.target.value = '';
+  }
+
+  async function handleCreatePeekLink() {
+    if (!peekFile || !session) {
+      return;
+    }
+
+    setPeekBusy(true);
+    setPeekStatus('');
+    try {
+      const encrypted = await encryptViewFile(peekFile);
+      const view = await uploadEncryptedView({
+        encryptedBlob: encrypted.encryptedBlob,
+        expiresIn: peekExpiresIn,
+        filename: encrypted.filename,
+        httpUrl: session.httpUrl,
+        mimeType: encrypted.mimeType,
+        onceOnly: peekOnceOnly,
+      });
+      setPeekUrl(createViewUrl(view.id, encrypted.keyBase64));
+      setPeekStatus('Peek link ready.');
+    } catch (error) {
+      setPeekStatus(error?.message || 'Unable to create Peek link.');
+    } finally {
+      setPeekBusy(false);
+    }
+  }
+
+  async function handleSessionPeek(fileRecord) {
+    if (!fileRecord?.file || !session) {
+      return;
+    }
+
+    setPeekBusy(true);
+    setPeekStatus('');
+    try {
+      const encrypted = await encryptViewFile(fileRecord.file);
+      const view = await uploadEncryptedView({
+        encryptedBlob: encrypted.encryptedBlob,
+        expiresIn: peekExpiresIn,
+        filename: encrypted.filename,
+        httpUrl: session.httpUrl,
+        mimeType: encrypted.mimeType,
+        onceOnly: peekOnceOnly,
+      });
+      const url = createViewUrl(view.id, encrypted.keyBase64);
+      setPeekUrl(url);
+      fallbackSocketRef.current?.send(JSON.stringify({
+        type: 'view-share-push',
+        fileName: encrypted.filename,
+        url,
+      }));
+      setPeekStatus('Peek link ready and sent to the other device.');
+    } catch (error) {
+      setPeekStatus(error?.message || 'Unable to create Peek link.');
+    } finally {
+      setPeekBusy(false);
+    }
   }
 
   const timerClass = useMemo(() => {
@@ -394,17 +473,72 @@ function SenderApp() {
             <ActivityFeed items={activity} />
             <div className="screen-divider" />
 
+            <ClipboardBar
+              copyLabel={clipboard.copyState === 'copied' ? 'Copied' : clipboard.copyState === 'failed' ? 'Retry copy' : 'Copy'}
+              draftText={clipboard.draftText}
+              maxChars={clipboard.maxChars}
+              onChange={clipboard.setDraftText}
+              onCopy={clipboard.copyReceivedText}
+              receivedText={clipboard.receivedText}
+            />
+            <div className="screen-divider" />
+
+            <ViewShare
+              expiresIn={peekExpiresIn}
+              file={peekFile}
+              generatedUrl={peekUrl}
+              isBusy={peekBusy}
+              onExpiresChange={setPeekExpiresIn}
+              onFileChange={setPeekFile}
+              onGenerate={handleCreatePeekLink}
+              onToggleOnceOnly={setPeekOnceOnly}
+              onceOnly={peekOnceOnly}
+              statusMessage={peekStatus}
+            />
+            <div className="screen-divider" />
+
             <div className="section-panel">
               <div className="subtle-list-title">Shared by you</div>
               <div className="file-list">
                 {sharedFiles.map((file) => (
-                  <FileRow key={file.id} file={file} progress={file.progress} status={file.status} />
+                  <FileRow
+                    key={file.id}
+                    action={
+                      selectedFiles.find((entry) => entry.id === file.id)?.file ? (
+                        <button
+                          type="button"
+                          className="compact-button"
+                          onClick={() => handleSessionPeek(selectedFiles.find((entry) => entry.id === file.id))}
+                        >
+                          Peek
+                        </button>
+                      ) : null
+                    }
+                    file={file}
+                    progress={file.progress}
+                    status={file.status}
+                  />
                 ))}
               </div>
             </div>
 
             {statusMessage ? <div className="status-copy">{statusMessage}</div> : null}
             {!peerConnected ? <div className="status-copy">Waiting for the other device…</div> : null}
+            {incomingPeekUrl ? (
+              <div className="section-panel view-share-panel">
+                <div className="section-heading-row">
+                  <h2 className="section-title" style={{ fontSize: '18px' }}>
+                    Peek ready
+                  </h2>
+                </div>
+                <div className="stack-sm">
+                  <div className="status-copy">The other device shared a view-only Peek.</div>
+                  <button type="button" className="button-primary" onClick={() => window.open(incomingPeekUrl, '_blank', 'noopener,noreferrer')}>
+                    Open Peek in new tab
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
             <ReceivePanel
               files={receivedFiles}
@@ -515,11 +649,16 @@ function ReceiverSession() {
   const [receivedFiles, setReceivedFiles] = useState([]);
   const [outgoingFiles, setOutgoingFiles] = useState([]);
   const [confirmKill, setConfirmKill] = useState(false);
+  const [incomingPeekUrl, setIncomingPeekUrl] = useState('');
   const fragment = window.location.hash.replace(/^#/, '');
   const [token, keyBase64] = fragment.split('.');
   const fullLinkMode = Boolean(token && keyBase64);
   const [key, setKey] = useState(null);
   const transportRef = useRef(null);
+  const clipboard = useClipboard({
+    encryptionKey: key,
+    socketRef: fallbackSocketRef,
+  });
 
   const transfer = useTransfer({
     encryptionKey: key,
@@ -636,6 +775,12 @@ function ReceiverSession() {
         }
         case 'webrtc-candidate':
           await webRtc.addIceCandidate(message.candidate);
+          break;
+        case 'clipboard-push':
+          await clipboard.handleClipboardMessage(message);
+          break;
+        case 'view-share-push':
+          setIncomingPeekUrl(message.url || '');
           break;
         case 'peer-disconnected':
           setStatusMessage('The other device disconnected.');
@@ -758,6 +903,32 @@ function ReceiverSession() {
                 <span className="metric-label">Session state</span>
               </div>
             </div>
+
+            <ClipboardBar
+              copyLabel={clipboard.copyState === 'copied' ? 'Copied' : clipboard.copyState === 'failed' ? 'Retry copy' : 'Copy'}
+              draftText={clipboard.draftText}
+              maxChars={clipboard.maxChars}
+              onChange={clipboard.setDraftText}
+              onCopy={clipboard.copyReceivedText}
+              receivedText={clipboard.receivedText}
+            />
+
+            {incomingPeekUrl ? (
+              <div className="section-panel view-share-panel">
+                <div className="section-heading-row">
+                  <h2 className="section-title" style={{ fontSize: '18px' }}>
+                    Peek ready
+                  </h2>
+                </div>
+                <div className="stack-sm">
+                  <div className="status-copy">The other device shared a view-only Peek.</div>
+                  <button type="button" className="button-primary" onClick={() => window.open(incomingPeekUrl, '_blank', 'noopener,noreferrer')}>
+                    Open Peek in new tab
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
             <div className="section-panel">
               <div className="file-list">
                 {receivedFiles.map((file) => (
