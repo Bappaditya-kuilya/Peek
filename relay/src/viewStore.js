@@ -68,7 +68,8 @@ function cleanupExpiredViews() {
   }
 }
 
-setInterval(cleanupExpiredViews, 5 * 60 * 1000);
+const viewCleanupTimer = setInterval(cleanupExpiredViews, 5 * 60 * 1000);
+viewCleanupTimer.unref?.();
 
 module.exports = {
   MAX_VIEWS,

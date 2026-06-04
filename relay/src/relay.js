@@ -7,6 +7,7 @@ const {
   validateToken,
 } = require('./session');
 const { isAllowedOrigin } = require('./security');
+const MAX_JSON_MESSAGE_BYTES = 32 * 1024;
 
 function sendJson(socket, payload) {
   if (!socket || socket.readyState !== 1) {
@@ -29,6 +30,15 @@ function assignRole(sessionId, role, socket) {
 }
 
 function handleJoinMessage(socket, message, role) {
+  if (
+    !/^[a-f0-9]{16}$/i.test(String(message.sessionId || '')) ||
+    typeof message.token !== 'string' ||
+    !/^[a-f0-9]{32,128}$/i.test(message.token)
+  ) {
+    socket.close(4002, 'Bad join payload');
+    return;
+  }
+
   const session = getSession(message.sessionId);
   if (!session || !validateToken(message.sessionId, message.token)) {
     socket.close(4001, 'Invalid token');
@@ -59,6 +69,10 @@ function handleJoinMessage(socket, message, role) {
 
 function handleRelayMessage(socket, rawData, isBinary) {
   if (isBinary) {
+    if (!socket.sessionId || !socket.role) {
+      socket.close(4002, 'Join required');
+      return;
+    }
     const session = getSession(socket.sessionId);
     const target = getPeerSocket(session, socket.role);
     if (target && target.readyState === 1) {
@@ -69,6 +83,10 @@ function handleRelayMessage(socket, rawData, isBinary) {
 
   let message;
   try {
+    if (Buffer.byteLength(rawData) > MAX_JSON_MESSAGE_BYTES) {
+      socket.close(4002, 'Message too large');
+      return;
+    }
     message = JSON.parse(rawData.toString());
   } catch {
     socket.close(4002, 'Bad message');
@@ -88,10 +106,18 @@ function handleRelayMessage(socket, rawData, isBinary) {
     case 'clipboard-push':
     case 'view-share-push':
     case 'relay-control': {
+      if (!socket.sessionId || !socket.role) {
+        socket.close(4002, 'Join required');
+        return;
+      }
       sendJson(getPeerSocket(getSession(socket.sessionId), socket.role), message);
       break;
     }
     case 'kill-session': {
+      if (!socket.sessionId) {
+        socket.close(4002, 'Join required');
+        return;
+      }
       killSession(socket.sessionId, 'Session ended', 4000);
       break;
     }

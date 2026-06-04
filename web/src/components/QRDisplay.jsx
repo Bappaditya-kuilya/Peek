@@ -32,19 +32,23 @@ export function QRDisplay({ expiresAt, joinUrl, numericCode }) {
   }, [expiresAt, timeLabel]);
 
   return (
-    <div className="qr-block">
+    <div className="panel qr-block">
+      <div className="section-heading-row">
+        <div>
+          <div className="panel-label">Join session</div>
+          <h2 className="section-title">Scan to open Peek on the other device</h2>
+        </div>
+      </div>
       <div className="qr-frame">
-        {qrUrl ? (
-          <img src={qrUrl} alt="QR code — scan to receive files on the other device" />
-        ) : null}
+        {qrUrl ? <img src={qrUrl} alt="QR code — scan to receive files on the other device" /> : null}
       </div>
       <div className={`qr-timer ${severityClass}`} aria-label={ariaLabel}>
         {timeLabel}
       </div>
       <div className="qr-copy">
-        or type <span className="code">{numericCode}</span> at passr.dev/r
+        No camera? Type <span className="code">{numericCode}</span> at `/r`
       </div>
-      <div className="warning-banner">Keep this screen on while transferring</div>
+      <div className="notice-banner warning">Keep this screen open until the transfer completes.</div>
     </div>
   );
 }

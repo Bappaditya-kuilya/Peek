@@ -9,14 +9,19 @@ export function ReceivePanel({
   title,
 }) {
   return (
-    <div className="stack-md">
+    <div className="panel stack-md">
       <div className="section-heading-row">
-        <h2 className="section-title" style={{ fontSize: '18px' }}>
-          {title}
-        </h2>
+        <div>
+          <div className="panel-label">Transfer panel</div>
+          <h2 className="section-title">{title}</h2>
+        </div>
       </div>
 
-      <div className="file-list">
+      <div className="file-table">
+        <div className="file-table-head">
+          <div className="panel-label">Files</div>
+          <div className="panel-label">Status</div>
+        </div>
         {files.map((file) => (
           <FileRow
             key={file.id}
@@ -45,11 +50,11 @@ export function ReceivePanel({
       ) : null}
 
       <div className="stack-sm">
-        <div className="section-meta">Send files back</div>
+        <div className="panel-label">Send files back</div>
         <button type="button" className="receive-dropzone" onClick={onSelectFiles}>
           <span>
-            <strong>Drop files here</strong>
-            or click to select
+            <strong>Choose files to return</strong>
+            Drop files here or click to browse
           </span>
         </button>
       </div>

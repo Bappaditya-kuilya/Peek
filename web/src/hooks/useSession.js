@@ -7,7 +7,8 @@ import {
 const DEFAULT_HTTP_URL = import.meta.env.VITE_RELAY_HTTP_URL || 'http://localhost:3000';
 const DEFAULT_WS_URL = import.meta.env.VITE_RELAY_WS_URL || 'ws://localhost:3000';
 const DEFAULT_RECEIVER_BASE_URL =
-  import.meta.env.VITE_RECEIVER_BASE_URL || 'https://passr.dev/r';
+  import.meta.env.VITE_RECEIVER_BASE_URL || 'https://peek.dev/r';
+const SESSION_CREATE_TIMEOUT_MS = 10000;
 
 function getReceiverBaseUrl() {
   if (import.meta.env.VITE_RECEIVER_BASE_URL) {
@@ -53,13 +54,22 @@ export function useSession() {
     const key = await generateEncryptionKey();
     const keyBase64 = await exportKeyToBase64(key);
 
-    const response = await fetch(`${DEFAULT_HTTP_URL}/session`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ fileCount }),
-    });
+    let response;
+    try {
+      response = await fetch(`${DEFAULT_HTTP_URL}/session`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ fileCount }),
+        signal: AbortSignal.timeout(SESSION_CREATE_TIMEOUT_MS),
+      });
+    } catch (error) {
+      if (error?.name === 'TimeoutError') {
+        throw new Error('Session setup timed out. Check that the relay server is reachable and try again.');
+      }
+      throw new Error('Unable to reach the relay server. Start the relay or verify the relay URL.');
+    }
 
     if (!response.ok) {
       throw new Error('Unable to create session');

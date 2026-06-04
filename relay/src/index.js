@@ -27,13 +27,27 @@ const {
 
 const app = express();
 const TEN_MB = 10 * 1024 * 1024;
+const MAX_FILENAME_LENGTH = 180;
+const ALLOWED_VIEW_MIME_TYPES = new Set(['application/pdf']);
 
 app.use(express.json({ limit: '256kb' }));
+
+app.disable('x-powered-by');
+
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
+  next();
+});
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (origin && isAllowedOrigin(origin)) {
     res.header('Access-Control-Allow-Origin', origin);
+    res.header('Vary', 'Origin');
   }
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   res.header('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
@@ -50,7 +64,13 @@ app.use('/view/:id', (req, res, next) => {
 });
 
 app.post('/session', sessionCreateLimiter, (req, res) => {
-  const fileCount = Number.isFinite(req.body?.fileCount) ? Math.max(0, Number(req.body.fileCount)) : 0;
+  const fileCountRaw = Number(req.body?.fileCount);
+  if (!Number.isFinite(fileCountRaw) || fileCountRaw < 0 || fileCountRaw > 500) {
+    res.status(400).json({ error: 'Invalid file count' });
+    return;
+  }
+
+  const fileCount = Math.floor(fileCountRaw);
   const session = createSession(fileCount);
   res.json({
     sessionId: session.id,
@@ -93,13 +113,19 @@ app.post(
   express.raw({ type: 'application/octet-stream', limit: '10mb' }),
   (req, res) => {
     const encryptedBlob = Buffer.from(req.body || []);
-    const filename = String(req.headers['x-filename'] || '').trim();
-    const mimeType = String(req.headers['x-mime-type'] || '').trim();
+    const filename = String(req.headers['x-filename'] || '').trim().replace(/[^\x20-\x7E]+/g, '').slice(0, MAX_FILENAME_LENGTH);
+    const mimeType = String(req.headers['x-mime-type'] || '').trim().toLowerCase();
     const expiresInRaw = Number(req.headers['x-expires-in']);
     const onceOnly = String(req.headers['x-once-only'] || '').toLowerCase() === 'true';
 
     if (!filename || !mimeType || !Number.isFinite(expiresInRaw)) {
       res.status(400).json({ error: 'Missing required view metadata' });
+      return;
+    }
+
+    const mimeAllowed = ALLOWED_VIEW_MIME_TYPES.has(mimeType) || mimeType.startsWith('image/');
+    if (!mimeAllowed) {
+      res.status(400).json({ error: 'Unsupported Peek file type' });
       return;
     }
 
@@ -152,6 +178,10 @@ app.get('/view/:id', viewFetchLimiter, (req, res) => {
 });
 
 app.delete('/view/:id', viewDeleteLimiter, express.json({ limit: '32kb' }), (req, res) => {
+  if (!/^[a-f0-9]{24}$/i.test(req.params.id)) {
+    res.status(400).json({ ok: false, error: 'Invalid view id' });
+    return;
+  }
   const token = String(req.body?.uploadToken || '');
   if (!validateUploadToken(req.params.id, token)) {
     res.status(403).json({ ok: false, error: 'Forbidden' });
@@ -167,7 +197,7 @@ app.get('/health', (req, res) => {
 });
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server, maxPayload: 256 * 1024 });
 wss.on('connection', handleWebSocket);
 
 const port = process.env.PORT || 3000;

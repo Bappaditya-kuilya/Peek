@@ -16,7 +16,7 @@ export async function downloadAllAsZip(files, sessionId) {
   const url = URL.createObjectURL(content);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `passr-${sessionId.slice(0, 6)}.zip`;
+  anchor.download = `peek-${sessionId.slice(0, 6)}.zip`;
   anchor.click();
   URL.revokeObjectURL(url);
 }
