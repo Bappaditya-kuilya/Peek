@@ -6,7 +6,13 @@ const {
   updateSession,
   validateToken,
 } = require('./session');
-const { isAllowedOrigin } = require('./security');
+const {
+  allowWebSocketConnection,
+  allowWebSocketMessage,
+  getRequestIp,
+  isAllowedOrigin,
+  normalizeIp,
+} = require('./security');
 const MAX_JSON_MESSAGE_BYTES = 32 * 1024;
 
 function sendJson(socket, payload) {
@@ -68,6 +74,12 @@ function handleJoinMessage(socket, message, role) {
 }
 
 function handleRelayMessage(socket, rawData, isBinary) {
+  const messageAllowance = allowWebSocketMessage(socket.clientIp);
+  if (!messageAllowance.allowed) {
+    socket.close(4008, 'Rate limited');
+    return;
+  }
+
   if (isBinary) {
     if (!socket.sessionId || !socket.role) {
       socket.close(4002, 'Join required');
@@ -130,6 +142,13 @@ function handleWebSocket(socket, req) {
   const origin = req.headers.origin;
   if (!isAllowedOrigin(origin)) {
     socket.close(4003, 'Forbidden origin');
+    return;
+  }
+
+  socket.clientIp = normalizeIp(getRequestIp(req));
+  const connectionAllowance = allowWebSocketConnection(socket.clientIp);
+  if (!connectionAllowance.allowed) {
+    socket.close(4008, 'Rate limited');
     return;
   }
 
