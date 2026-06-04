@@ -25,6 +25,36 @@ const sessionLookupLimiter = rateLimit({
   },
 });
 
+const viewUploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'Too many Peek uploads. Please wait.',
+  },
+});
+
+const viewFetchLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'Too many Peek views. Please wait.',
+  },
+});
+
+const viewDeleteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'Too many Peek delete attempts. Please wait.',
+  },
+});
+
 function isAllowedOrigin(origin) {
   return allowedOrigins.includes(origin);
 }
@@ -34,4 +64,7 @@ module.exports = {
   isAllowedOrigin,
   sessionCreateLimiter,
   sessionLookupLimiter,
+  viewDeleteLimiter,
+  viewFetchLimiter,
+  viewUploadLimiter,
 };

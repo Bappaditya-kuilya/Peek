@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Peek</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #f7f5ef;
+        --panel: rgba(255, 255, 255, 0.92);
+        --panel-border: rgba(17, 17, 16, 0.08);
+        --text: #111110;
+        --muted: #6b6b68;
+        --warning-bg: #fff2cf;
+        --warning-text: #7a4f1a;
+        --danger: #c8302a;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: 'DM Sans', sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(224, 192, 122, 0.28), transparent 28%),
+          linear-gradient(180deg, #fcfbf7 0%, var(--bg) 100%);
+        color: var(--text);
+      }
+
+      #app {
+        min-height: 100vh;
+        padding: 24px;
+      }
+
+      .shell {
+        width: min(980px, 100%);
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      .panel {
+        border: 1px solid var(--panel-border);
+        border-radius: 16px;
+        background: var(--panel);
+        backdrop-filter: blur(8px);
+        box-shadow: 0 20px 50px rgba(17, 17, 16, 0.08);
+      }
+
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 18px 20px;
+      }
+
+      .wordmark {
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .timer {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 15px;
+        color: var(--muted);
+      }
+
+      .warning {
+        padding: 14px 16px;
+        background: var(--warning-bg);
+        color: var(--warning-text);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .content {
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .title {
+        margin: 0;
+        font-size: 28px;
+        line-height: 1.05;
+      }
+
+      .meta {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .viewer {
+        min-height: 320px;
+        padding: 16px;
+        overflow: auto;
+      }
+
+      .viewer img,
+      .viewer canvas {
+        display: block;
+        max-width: 100%;
+        height: auto;
+        margin: 0 auto;
+        border-radius: 12px;
+      }
+
+      .pdf-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .status {
+        padding: 40px 24px;
+        text-align: center;
+        color: var(--muted);
+      }
+
+      .status.error {
+        color: var(--danger);
+      }
+
+      #watermark {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 9999;
+        color: rgba(0, 0, 0, 0.14);
+        font-size: 22px;
+        font-weight: 700;
+        transform: rotate(-32deg);
+        background: repeating-linear-gradient(
+          transparent 0px,
+          transparent 80px,
+          rgba(0, 0, 0, 0.06) 80px,
+          rgba(0, 0, 0, 0.06) 160px
+        );
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        user-select: none;
+      }
+
+      @media (max-width: 640px) {
+        #app { padding: 14px; }
+        .title { font-size: 24px; }
+        .content, .header { padding: 16px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="watermark">PEEK ONLY • VIEW ONLY • NO DOWNLOAD • PEEK ONLY • VIEW ONLY • NO DOWNLOAD</div>
+    <script type="module" src="/view.js"></script>
+  </body>
+  </html>

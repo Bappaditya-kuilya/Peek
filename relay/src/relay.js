@@ -85,6 +85,8 @@ function handleRelayMessage(socket, rawData, isBinary) {
     case 'webrtc-offer':
     case 'webrtc-answer':
     case 'webrtc-candidate':
+    case 'clipboard-push':
+    case 'view-share-push':
     case 'relay-control': {
       sendJson(getPeerSocket(getSession(socket.sessionId), socket.role), message);
       break;

@@ -10,14 +10,25 @@ const {
   validateToken,
 } = require('./session');
 const {
+  createView,
+  deleteView,
+  getView,
+  validateUploadToken,
+} = require('./viewStore');
+const {
   allowedOrigins,
   isAllowedOrigin,
   sessionCreateLimiter,
   sessionLookupLimiter,
+  viewDeleteLimiter,
+  viewFetchLimiter,
+  viewUploadLimiter,
 } = require('./security');
 
 const app = express();
-app.use(express.json());
+const TEN_MB = 10 * 1024 * 1024;
+
+app.use(express.json({ limit: '256kb' }));
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;
@@ -30,6 +41,11 @@ app.use((req, res, next) => {
     res.sendStatus(204);
     return;
   }
+  next();
+});
+
+app.use('/view/:id', (req, res, next) => {
+  req.url = req.path;
   next();
 });
 
@@ -71,6 +87,81 @@ app.delete('/session/:id', (req, res) => {
   res.json({ ok });
 });
 
+app.post(
+  '/view',
+  viewUploadLimiter,
+  express.raw({ type: 'application/octet-stream', limit: '10mb' }),
+  (req, res) => {
+    const encryptedBlob = Buffer.from(req.body || []);
+    const filename = String(req.headers['x-filename'] || '').trim();
+    const mimeType = String(req.headers['x-mime-type'] || '').trim();
+    const expiresInRaw = Number(req.headers['x-expires-in']);
+    const onceOnly = String(req.headers['x-once-only'] || '').toLowerCase() === 'true';
+
+    if (!filename || !mimeType || !Number.isFinite(expiresInRaw)) {
+      res.status(400).json({ error: 'Missing required view metadata' });
+      return;
+    }
+
+    const expiresIn = Math.floor(expiresInRaw);
+    if (expiresIn < 1 || expiresIn > 60) {
+      res.status(400).json({ error: 'Invalid expiry' });
+      return;
+    }
+
+    if (!encryptedBlob.length || encryptedBlob.length > TEN_MB) {
+      res.status(413).json({ error: 'Encrypted Peek payload too large' });
+      return;
+    }
+
+    const view = createView({
+      encryptedBlob,
+      expiresIn,
+      filename,
+      mimeType,
+      onceOnly,
+    });
+
+    res.status(201).json(view);
+  }
+);
+
+app.get('/view/:id', viewFetchLimiter, (req, res) => {
+  const view = getView(req.params.id);
+  if (!view) {
+    res.status(410).json({ error: 'Peek expired or unavailable' });
+    return;
+  }
+
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Filename', view.filename);
+  res.setHeader('X-Mime-Type', view.mimeType);
+  res.setHeader('X-Expires-At', String(view.expiresAt));
+  res.setHeader('X-Once-Only', view.onceOnly ? 'true' : 'false');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+
+  res.write(view.encryptedBlob);
+  res.on('finish', () => {
+    view.viewCount += 1;
+    if (view.onceOnly) {
+      deleteView(req.params.id);
+    }
+  });
+  res.end();
+});
+
+app.delete('/view/:id', viewDeleteLimiter, express.json({ limit: '32kb' }), (req, res) => {
+  const token = String(req.body?.uploadToken || '');
+  if (!validateUploadToken(req.params.id, token)) {
+    res.status(403).json({ ok: false, error: 'Forbidden' });
+    return;
+  }
+
+  const ok = deleteView(req.params.id);
+  res.json({ ok });
+});
+
 app.get('/health', (req, res) => {
   res.json({ ok: true, allowedOrigins });
 });
@@ -81,5 +172,5 @@ wss.on('connection', handleWebSocket);
 
 const port = process.env.PORT || 3000;
 server.listen(port, () => {
-  console.log(`Passr relay running on port ${port}`);
+  console.log(`Peek relay running on port ${port}`);
 });
