@@ -17,9 +17,12 @@ const {
 } = require('./viewStore');
 const {
   allowedOrigins,
+  getRequestIp,
   isAllowedOrigin,
+  requireAllowedOrigin,
   sessionCreateLimiter,
   sessionLookupLimiter,
+  trustProxy,
   viewDeleteLimiter,
   viewFetchLimiter,
   viewUploadLimiter,
@@ -30,6 +33,7 @@ const TEN_MB = 10 * 1024 * 1024;
 const MAX_FILENAME_LENGTH = 180;
 const ALLOWED_VIEW_MIME_TYPES = new Set(['application/pdf']);
 
+app.set('trust proxy', trustProxy);
 app.use(express.json({ limit: '256kb' }));
 
 app.disable('x-powered-by');
@@ -40,6 +44,8 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cache-Control', 'no-store');
   next();
 });
 
@@ -63,7 +69,7 @@ app.use('/view/:id', (req, res, next) => {
   next();
 });
 
-app.post('/session', sessionCreateLimiter, (req, res) => {
+app.post('/session', requireAllowedOrigin, sessionCreateLimiter, (req, res) => {
   const fileCountRaw = Number(req.body?.fileCount);
   if (!Number.isFinite(fileCountRaw) || fileCountRaw < 0 || fileCountRaw > 500) {
     res.status(400).json({ error: 'Invalid file count' });
@@ -80,7 +86,7 @@ app.post('/session', sessionCreateLimiter, (req, res) => {
   });
 });
 
-app.post('/session/lookup', sessionLookupLimiter, (req, res) => {
+app.post('/session/lookup', requireAllowedOrigin, sessionLookupLimiter, (req, res) => {
   const code = String(req.body?.code || '').trim();
   if (!/^\d{6}$/.test(code)) {
     res.status(400).json({ error: 'Invalid code' });
@@ -96,7 +102,11 @@ app.post('/session/lookup', sessionLookupLimiter, (req, res) => {
   res.json(result);
 });
 
-app.delete('/session/:id', (req, res) => {
+app.delete('/session/:id', requireAllowedOrigin, (req, res) => {
+  if (!/^[a-f0-9]{16}$/i.test(req.params.id)) {
+    res.status(400).json({ ok: false, error: 'Invalid session id' });
+    return;
+  }
   const token = String(req.body?.token || '');
   const session = getSession(req.params.id);
   if (!session || !validateToken(req.params.id, token)) {
@@ -109,6 +119,7 @@ app.delete('/session/:id', (req, res) => {
 
 app.post(
   '/view',
+  requireAllowedOrigin,
   viewUploadLimiter,
   express.raw({ type: 'application/octet-stream', limit: '10mb' }),
   (req, res) => {
@@ -153,6 +164,10 @@ app.post(
 );
 
 app.get('/view/:id', viewFetchLimiter, (req, res) => {
+  if (!/^[a-f0-9]{24}$/i.test(req.params.id)) {
+    res.status(400).json({ error: 'Invalid view id' });
+    return;
+  }
   const view = getView(req.params.id);
   if (!view) {
     res.status(410).json({ error: 'Peek expired or unavailable' });
@@ -177,7 +192,7 @@ app.get('/view/:id', viewFetchLimiter, (req, res) => {
   res.end();
 });
 
-app.delete('/view/:id', viewDeleteLimiter, express.json({ limit: '32kb' }), (req, res) => {
+app.delete('/view/:id', requireAllowedOrigin, viewDeleteLimiter, express.json({ limit: '32kb' }), (req, res) => {
   if (!/^[a-f0-9]{24}$/i.test(req.params.id)) {
     res.status(400).json({ ok: false, error: 'Invalid view id' });
     return;
@@ -193,7 +208,7 @@ app.delete('/view/:id', viewDeleteLimiter, express.json({ limit: '32kb' }), (req
 });
 
 app.get('/health', (req, res) => {
-  res.json({ ok: true, allowedOrigins });
+  res.json({ ok: true, allowedOrigins, requestIp: getRequestIp(req) });
 });
 
 const server = http.createServer(app);

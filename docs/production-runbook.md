@@ -4,6 +4,7 @@
 
 - Frontend and relay origins are known.
 - `ALLOWED_ORIGINS` is set explicitly for production relay deployment.
+- `TRUST_PROXY` matches the real proxy chain depth in front of the relay.
 - TLS is terminated before public traffic reaches the relay.
 
 ## Verify before deploy
@@ -21,6 +22,8 @@ npm run build
 - Confirm port `3000`
 - Confirm memory and concurrency limits at the platform edge
 - Confirm only expected origins are allowed
+- Confirm `TRUST_PROXY` is set correctly before trusting forwarded client IPs
+- Confirm websocket and HTTP rate limits are active
 
 ## Frontend deployment
 
