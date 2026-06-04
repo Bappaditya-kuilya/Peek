@@ -64,3 +64,73 @@ test('killSession closes both sockets and removes the session', () => {
     ]
   );
 });
+
+test('setSessionStore swaps the active implementation', () => {
+  const calls = [];
+  const stubStore = {
+    canJoinRole(...args) {
+      calls.push(['canJoinRole', ...args]);
+      return 'joined';
+    },
+    clearRoleSocket(...args) {
+      calls.push(['clearRoleSocket', ...args]);
+      return 'cleared';
+    },
+    createSession(...args) {
+      calls.push(['createSession', ...args]);
+      return { id: 'stub-session' };
+    },
+    getSession(...args) {
+      calls.push(['getSession', ...args]);
+      return { id: args[0] };
+    },
+    killSession(...args) {
+      calls.push(['killSession', ...args]);
+      return true;
+    },
+    lookupSessionByCode(...args) {
+      calls.push(['lookupSessionByCode', ...args]);
+      return { sessionId: 'stub-session' };
+    },
+    markRoleJoined(...args) {
+      calls.push(['markRoleJoined', ...args]);
+      return { marked: true };
+    },
+    updateSession(...args) {
+      calls.push(['updateSession', ...args]);
+      return { updated: true };
+    },
+    validateToken(...args) {
+      calls.push(['validateToken', ...args]);
+      return true;
+    },
+  };
+
+  const originalStore = session.getSessionStore();
+  session.setSessionStore(stubStore);
+
+  try {
+    assert.equal(session.createSession(4).id, 'stub-session');
+    assert.equal(session.getSession('abc').id, 'abc');
+    assert.equal(session.updateSession('abc', { ok: true }).updated, true);
+    assert.equal(session.canJoinRole({ id: 'abc' }, 'initiator'), 'joined');
+    assert.equal(session.markRoleJoined('abc', 'joiner').marked, true);
+    assert.equal(session.clearRoleSocket('abc', 'joiner'), 'cleared');
+    assert.equal(session.validateToken('abc', 'token'), true);
+    assert.equal(session.lookupSessionByCode('123456').sessionId, 'stub-session');
+    assert.equal(session.killSession('abc'), true);
+    assert.deepEqual(calls, [
+      ['createSession', 4],
+      ['getSession', 'abc'],
+      ['updateSession', 'abc', { ok: true }],
+      ['canJoinRole', { id: 'abc' }, 'initiator'],
+      ['markRoleJoined', 'abc', 'joiner'],
+      ['clearRoleSocket', 'abc', 'joiner'],
+      ['validateToken', 'abc', 'token'],
+      ['lookupSessionByCode', '123456'],
+      ['killSession', 'abc'],
+    ]);
+  } finally {
+    session.setSessionStore(originalStore);
+  }
+});
