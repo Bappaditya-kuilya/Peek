@@ -3,24 +3,11 @@ import {
   exportKeyToBase64,
   generateEncryptionKey,
 } from './useCrypto.js';
+import { getReceiverBaseUrl, getRelayHttpUrl, getRelayWsUrl } from '../utils/relayConfig.js';
 
-const DEFAULT_HTTP_URL = import.meta.env.VITE_RELAY_HTTP_URL || 'http://localhost:3000';
-const DEFAULT_WS_URL = import.meta.env.VITE_RELAY_WS_URL || 'ws://localhost:3000';
-const DEFAULT_RECEIVER_BASE_URL =
-  import.meta.env.VITE_RECEIVER_BASE_URL || 'https://peek.dev/r';
+const DEFAULT_HTTP_URL = getRelayHttpUrl();
+const DEFAULT_WS_URL = getRelayWsUrl();
 const SESSION_CREATE_TIMEOUT_MS = 10000;
-
-function getReceiverBaseUrl() {
-  if (import.meta.env.VITE_RECEIVER_BASE_URL) {
-    return import.meta.env.VITE_RECEIVER_BASE_URL.replace(/\/$/, '');
-  }
-
-  if (window.location.hostname === 'localhost' && window.location.port === '5173') {
-    return 'http://localhost:5174/r';
-  }
-
-  return DEFAULT_RECEIVER_BASE_URL.replace(/\/$/, '');
-}
 
 export function useSession() {
   const [session, setSession] = useState(null);

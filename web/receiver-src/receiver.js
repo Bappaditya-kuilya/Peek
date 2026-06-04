@@ -1,11 +1,10 @@
 import { sanitizeFilename, safeBaseName } from './sanitize.js';
 
-const RELAY_HTTP_URL = window.location.hostname === 'localhost'
-  ? 'http://localhost:3000'
-  : `${window.location.origin}/api`;
-const RELAY_WS_URL = window.location.hostname === 'localhost'
-  ? 'ws://localhost:3000'
-  : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api`;
+const PRODUCTION_RELAY_HTTP_URL = 'https://peek-relay.fly.dev';
+const PRODUCTION_RELAY_WS_URL = 'wss://peek-relay.fly.dev';
+const isLocalHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const RELAY_HTTP_URL = isLocalHost ? 'http://localhost:3000' : PRODUCTION_RELAY_HTTP_URL;
+const RELAY_WS_URL = isLocalHost ? 'ws://localhost:3000' : PRODUCTION_RELAY_WS_URL;
 const IV_LENGTH = 12;
 const CHUNK_SIZE = 48 * 1024;
 const PACKET_MANIFEST = 1;
