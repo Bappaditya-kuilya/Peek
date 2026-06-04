@@ -3,8 +3,8 @@ const assert = require('node:assert/strict');
 
 const viewStore = require('../src/viewStore');
 
-test('createView returns ids and validates upload token', () => {
-  const created = viewStore.createView({
+test('createView returns ids and validates upload token', async () => {
+  const created = await viewStore.createView({
     encryptedBlob: Buffer.from('abc'),
     expiresIn: 5,
     filename: 'demo.pdf',
@@ -14,13 +14,13 @@ test('createView returns ids and validates upload token', () => {
 
   assert.match(created.id, /^[a-f0-9]{24}$/);
   assert.match(created.uploadToken, /^[a-f0-9]{64}$/);
-  assert.equal(viewStore.validateUploadToken(created.id, created.uploadToken), true);
-  assert.equal(viewStore.validateUploadToken(created.id, 'bad-token'), false);
-  assert.equal(viewStore.deleteView(created.id), true);
+  assert.equal(await viewStore.validateUploadToken(created.id, created.uploadToken), true);
+  assert.equal(await viewStore.validateUploadToken(created.id, 'bad-token'), false);
+  assert.equal(await viewStore.deleteView(created.id), true);
 });
 
-test('getView returns null after deletion', () => {
-  const created = viewStore.createView({
+test('getView returns null after deletion', async () => {
+  const created = await viewStore.createView({
     encryptedBlob: Buffer.from('def'),
     expiresIn: 5,
     filename: 'image.png',
@@ -28,29 +28,33 @@ test('getView returns null after deletion', () => {
     onceOnly: true,
   });
 
-  assert.equal(Boolean(viewStore.getView(created.id)), true);
-  assert.equal(viewStore.deleteView(created.id), true);
-  assert.equal(viewStore.getView(created.id), null);
+  assert.equal(Boolean(await viewStore.getView(created.id)), true);
+  assert.equal(await viewStore.deleteView(created.id), true);
+  assert.equal(await viewStore.getView(created.id), null);
 });
 
-test('setViewStore swaps the active implementation', () => {
+test('setViewStore swaps the active implementation', async () => {
   const calls = [];
   const stubStore = {
     createView(...args) {
       calls.push(['createView', ...args]);
-      return { id: 'stub-view', uploadToken: 'token', expiresAt: 1 };
+      return Promise.resolve({ id: 'stub-view', uploadToken: 'token', expiresAt: 1 });
     },
     deleteView(...args) {
       calls.push(['deleteView', ...args]);
-      return true;
+      return Promise.resolve(true);
     },
     getView(...args) {
       calls.push(['getView', ...args]);
-      return { id: args[0] };
+      return Promise.resolve({ id: args[0] });
+    },
+    incrementViewCount(...args) {
+      calls.push(['incrementViewCount', ...args]);
+      return Promise.resolve(true);
     },
     validateUploadToken(...args) {
       calls.push(['validateUploadToken', ...args]);
-      return true;
+      return Promise.resolve(true);
     },
   };
 
@@ -59,18 +63,21 @@ test('setViewStore swaps the active implementation', () => {
 
   try {
     assert.equal(
-      viewStore.createView({
+      (
+        await viewStore.createView({
         encryptedBlob: Buffer.from('ghi'),
         expiresIn: 10,
         filename: 'peek.txt',
         mimeType: 'text/plain',
         onceOnly: false,
-      }).id,
+      })
+      ).id,
       'stub-view'
     );
-    assert.equal(viewStore.getView('view-1').id, 'view-1');
-    assert.equal(viewStore.validateUploadToken('view-1', 'token'), true);
-    assert.equal(viewStore.deleteView('view-1'), true);
+    assert.equal((await viewStore.getView('view-1')).id, 'view-1');
+    assert.equal(await viewStore.incrementViewCount('view-1'), true);
+    assert.equal(await viewStore.validateUploadToken('view-1', 'token'), true);
+    assert.equal(await viewStore.deleteView('view-1'), true);
     assert.deepEqual(calls, [
       [
         'createView',
@@ -83,6 +90,7 @@ test('setViewStore swaps the active implementation', () => {
         },
       ],
       ['getView', 'view-1'],
+      ['incrementViewCount', 'view-1'],
       ['validateUploadToken', 'view-1', 'token'],
       ['deleteView', 'view-1'],
     ]);

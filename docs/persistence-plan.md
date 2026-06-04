@@ -43,10 +43,19 @@ Move session and view metadata into a shared store such as Redis while keeping e
   - Peek metadata
 - Keep encrypted payload size bounded and TTL-controlled.
 
+Status:
+
+- Redis-backed session and Peek view adapters are now scaffolded behind `REDIS_URL`.
+- In-memory storage remains the safe fallback when Redis is not configured or unavailable at boot.
+
 ## Phase 3
 
 - Update relay WebSocket/session code to use the storage interface instead of direct module state.
 - Add integration tests that run against the in-memory adapter first.
+
+Status:
+
+- Relay/session/view access is now promise-compatible so async backends can be used without another API break.
 
 ## Operational goals
 

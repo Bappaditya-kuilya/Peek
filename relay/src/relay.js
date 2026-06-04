@@ -24,7 +24,7 @@ function sendJson(socket, payload) {
   socket.send(JSON.stringify(payload));
 }
 
-function handleJoinMessage(socket, message, role) {
+async function handleJoinMessage(socket, message, role) {
   if (
     !/^[a-f0-9]{16}$/i.test(String(message.sessionId || '')) ||
     typeof message.token !== 'string' ||
@@ -34,8 +34,8 @@ function handleJoinMessage(socket, message, role) {
     return;
   }
 
-  const session = getSession(message.sessionId);
-  if (!session || !validateToken(message.sessionId, message.token)) {
+  const session = await getSession(message.sessionId);
+  if (!session || !(await validateToken(message.sessionId, message.token))) {
     socket.close(4001, 'Invalid token');
     return;
   }
@@ -54,7 +54,7 @@ function handleJoinMessage(socket, message, role) {
   }
 
   setRoleSocket(message.sessionId, role, socket);
-  markRoleJoined(message.sessionId, role);
+  await markRoleJoined(message.sessionId, role);
   socket.sessionId = message.sessionId;
   socket.role = role;
 
@@ -62,7 +62,7 @@ function handleJoinMessage(socket, message, role) {
   sendJson(getPeerSocket(message.sessionId, role), { type: 'peer-connected', role });
 }
 
-function handleRelayMessage(socket, rawData, isBinary) {
+async function handleRelayMessage(socket, rawData, isBinary) {
   const messageAllowance = allowWebSocketMessage(socket.clientIp);
   if (!messageAllowance.allowed) {
     socket.close(4008, 'Rate limited');
@@ -74,7 +74,7 @@ function handleRelayMessage(socket, rawData, isBinary) {
       socket.close(4002, 'Join required');
       return;
     }
-    const session = getSession(socket.sessionId);
+    const session = await getSession(socket.sessionId);
     const target = session ? getPeerSocket(socket.sessionId, socket.role) : null;
     if (target && target.readyState === 1) {
       target.send(rawData, { binary: true });
@@ -96,10 +96,10 @@ function handleRelayMessage(socket, rawData, isBinary) {
 
   switch (message.type) {
     case 'initiator-join':
-      handleJoinMessage(socket, message, 'initiator');
+      await handleJoinMessage(socket, message, 'initiator');
       break;
     case 'joiner-join':
-      handleJoinMessage(socket, message, 'joiner');
+      await handleJoinMessage(socket, message, 'joiner');
       break;
     case 'webrtc-offer':
     case 'webrtc-answer':
@@ -119,7 +119,7 @@ function handleRelayMessage(socket, rawData, isBinary) {
         socket.close(4002, 'Join required');
         return;
       }
-      killSession(socket.sessionId, 'Session ended', 4000);
+      await killSession(socket.sessionId, 'Session ended', 4000);
       break;
     }
     default:
@@ -142,16 +142,18 @@ function handleWebSocket(socket, req) {
   }
 
   socket.on('message', (rawData, isBinary) => {
-    handleRelayMessage(socket, rawData, isBinary);
+    handleRelayMessage(socket, rawData, isBinary).catch(() => {
+      socket.close(1011, 'Relay failure');
+    });
   });
 
-  socket.on('close', () => {
+  socket.on('close', async () => {
     // If this socket was superseded by a reconnect, the role already points at
     // a newer socket — do not clear it or tell the peer we disconnected.
     if (socket.replaced) {
       return;
     }
-    const session = getSession(socket.sessionId);
+    const session = await getSession(socket.sessionId);
     if (!session) {
       return;
     }
