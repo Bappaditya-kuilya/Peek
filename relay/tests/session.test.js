@@ -24,14 +24,14 @@ test('markRoleJoined and clearRoleSocket update session state', () => {
   const created = session.createSession(1);
   session.markRoleJoined(created.id, 'initiator');
   const fakeSocket = { close() {} };
-  session.updateSession(created.id, { initiatorSocket: fakeSocket });
+  session.setRoleSocket(created.id, 'initiator', fakeSocket);
 
   const stored = session.getSession(created.id);
   assert.equal(Boolean(stored.initiatorJoinedAt), true);
-  assert.equal(stored.initiatorSocket, fakeSocket);
+  assert.equal(session.getRoleSocket(created.id, 'initiator'), fakeSocket);
 
   session.clearRoleSocket(created.id, 'initiator');
-  assert.equal(session.getSession(created.id).initiatorSocket, null);
+  assert.equal(session.getRoleSocket(created.id, 'initiator'), null);
   session.killSession(created.id);
 });
 
@@ -49,10 +49,8 @@ test('killSession closes both sockets and removes the session', () => {
     },
   };
 
-  session.updateSession(created.id, {
-    initiatorSocket,
-    joinerSocket,
-  });
+  session.setRoleSocket(created.id, 'initiator', initiatorSocket);
+  session.setRoleSocket(created.id, 'joiner', joinerSocket);
 
   assert.equal(session.killSession(created.id, 'Ended for test', 4009), true);
   assert.equal(session.getSession(created.id), null);
@@ -68,14 +66,6 @@ test('killSession closes both sockets and removes the session', () => {
 test('setSessionStore swaps the active implementation', () => {
   const calls = [];
   const stubStore = {
-    canJoinRole(...args) {
-      calls.push(['canJoinRole', ...args]);
-      return 'joined';
-    },
-    clearRoleSocket(...args) {
-      calls.push(['clearRoleSocket', ...args]);
-      return 'cleared';
-    },
     createSession(...args) {
       calls.push(['createSession', ...args]);
       return { id: 'stub-session' };
@@ -105,17 +95,44 @@ test('setSessionStore swaps the active implementation', () => {
       return true;
     },
   };
+  const stubRegistry = {
+    clearRoleSocket(...args) {
+      calls.push(['registry.clearRoleSocket', ...args]);
+      return 'registry-cleared';
+    },
+    closeSessionSockets(...args) {
+      calls.push(['registry.closeSessionSockets', ...args]);
+      return true;
+    },
+    getPeerSocket(...args) {
+      calls.push(['registry.getPeerSocket', ...args]);
+      return { peer: true };
+    },
+    getRoleSocket(...args) {
+      calls.push(['registry.getRoleSocket', ...args]);
+      return null;
+    },
+    setRoleSocket(...args) {
+      calls.push(['registry.setRoleSocket', ...args]);
+      return args[2];
+    },
+  };
 
   const originalStore = session.getSessionStore();
+  const originalRegistry = session.getLiveSessionRegistry();
   session.setSessionStore(stubStore);
+  session.setLiveSessionRegistry(stubRegistry);
 
   try {
     assert.equal(session.createSession(4).id, 'stub-session');
     assert.equal(session.getSession('abc').id, 'abc');
     assert.equal(session.updateSession('abc', { ok: true }).updated, true);
-    assert.equal(session.canJoinRole({ id: 'abc' }, 'initiator'), 'joined');
+    assert.equal(session.canJoinRole({ id: 'abc' }, 'initiator'), true);
     assert.equal(session.markRoleJoined('abc', 'joiner').marked, true);
-    assert.equal(session.clearRoleSocket('abc', 'joiner'), 'cleared');
+    assert.equal(session.setRoleSocket('abc', 'joiner', { id: 1 }).id, 1);
+    assert.equal(session.getRoleSocket('abc', 'joiner'), null);
+    assert.equal(session.getPeerSocket('abc', 'joiner').peer, true);
+    assert.equal(session.clearRoleSocket('abc', 'joiner'), 'registry-cleared');
     assert.equal(session.validateToken('abc', 'token'), true);
     assert.equal(session.lookupSessionByCode('123456').sessionId, 'stub-session');
     assert.equal(session.killSession('abc'), true);
@@ -123,14 +140,19 @@ test('setSessionStore swaps the active implementation', () => {
       ['createSession', 4],
       ['getSession', 'abc'],
       ['updateSession', 'abc', { ok: true }],
-      ['canJoinRole', { id: 'abc' }, 'initiator'],
+      ['registry.getRoleSocket', 'abc', 'initiator'],
       ['markRoleJoined', 'abc', 'joiner'],
-      ['clearRoleSocket', 'abc', 'joiner'],
+      ['registry.setRoleSocket', 'abc', 'joiner', { id: 1 }],
+      ['registry.getRoleSocket', 'abc', 'joiner'],
+      ['registry.getPeerSocket', 'abc', 'joiner'],
+      ['registry.clearRoleSocket', 'abc', 'joiner', undefined],
       ['validateToken', 'abc', 'token'],
       ['lookupSessionByCode', '123456'],
-      ['killSession', 'abc'],
+      ['registry.closeSessionSockets', 'abc', 'Session ended', 4000],
+      ['killSession', 'abc', 'Session ended', 4000],
     ]);
   } finally {
     session.setSessionStore(originalStore);
+    session.setLiveSessionRegistry(originalRegistry);
   }
 });

@@ -31,8 +31,6 @@ function createInMemorySessionStore() {
       expiresAt: now + SESSION_TTL_MS,
       initiatorJoinedAt: null,
       joinerJoinedAt: null,
-      initiatorSocket: null,
-      joinerSocket: null,
       fileCount,
     };
     sessions.set(id, session);
@@ -58,11 +56,11 @@ function createInMemorySessionStore() {
     }
 
     if (role === 'initiator') {
-      return !session.initiatorSocket && !session.initiatorJoinedAt;
+      return !session.initiatorJoinedAt;
     }
 
     if (role === 'joiner') {
-      return !session.joinerSocket && !session.joinerJoinedAt;
+      return !session.joinerJoinedAt;
     }
 
     return false;
@@ -75,18 +73,6 @@ function createInMemorySessionStore() {
 
     if (role === 'joiner') {
       return updateSession(sessionId, { joinerJoinedAt: Date.now() });
-    }
-
-    return null;
-  }
-
-  function clearRoleSocket(sessionId, role) {
-    if (role === 'initiator') {
-      return updateSession(sessionId, { initiatorSocket: null });
-    }
-
-    if (role === 'joiner') {
-      return updateSession(sessionId, { joinerSocket: null });
     }
 
     return null;
@@ -125,23 +111,11 @@ function createInMemorySessionStore() {
     return null;
   }
 
-  function closeSocket(socket, closeCode, reason) {
-    if (!socket) {
-      return;
-    }
-    try {
-      socket.close(closeCode, reason);
-    } catch {}
-  }
-
-  function killSession(sessionId, reason = 'Session ended', closeCode = 4000) {
+  function killSession(sessionId) {
     const session = sessions.get(sessionId);
     if (!session) {
       return false;
     }
-
-    closeSocket(session.initiatorSocket, closeCode, reason);
-    closeSocket(session.joinerSocket, closeCode, reason);
     sessions.delete(sessionId);
     return true;
   }
@@ -161,7 +135,6 @@ function createInMemorySessionStore() {
   return {
     SESSION_TTL_MS,
     canJoinRole,
-    clearRoleSocket,
     createSession,
     getSession,
     killSession,

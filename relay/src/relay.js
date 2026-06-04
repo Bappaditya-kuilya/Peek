@@ -1,9 +1,11 @@
 const {
   clearRoleSocket,
   getSession,
+  getPeerSocket,
+  getRoleSocket,
   killSession,
   markRoleJoined,
-  updateSession,
+  setRoleSocket,
   validateToken,
 } = require('./session');
 const {
@@ -20,19 +22,6 @@ function sendJson(socket, payload) {
     return;
   }
   socket.send(JSON.stringify(payload));
-}
-
-function getPeerSocket(session, role) {
-  if (!session) {
-    return null;
-  }
-  return role === 'initiator' ? session.joinerSocket : session.initiatorSocket;
-}
-
-function assignRole(sessionId, role, socket) {
-  return role === 'initiator'
-    ? updateSession(sessionId, { initiatorSocket: socket })
-    : updateSession(sessionId, { joinerSocket: socket });
 }
 
 function handleJoinMessage(socket, message, role) {
@@ -56,7 +45,7 @@ function handleJoinMessage(socket, message, role) {
   // still holds the role — a stale connection after a network blip or a client
   // re-render — replace it instead of rejecting. Rejecting (the old 4004 path)
   // closed the reconnecting peer and ended the session immediately.
-  const existing = role === 'initiator' ? session.initiatorSocket : session.joinerSocket;
+  const existing = getRoleSocket(message.sessionId, role);
   if (existing && existing !== socket) {
     existing.replaced = true;
     try {
@@ -64,13 +53,13 @@ function handleJoinMessage(socket, message, role) {
     } catch {}
   }
 
-  assignRole(message.sessionId, role, socket);
+  setRoleSocket(message.sessionId, role, socket);
   markRoleJoined(message.sessionId, role);
   socket.sessionId = message.sessionId;
   socket.role = role;
 
   sendJson(socket, { type: `${role}-ready`, expiresAt: session.expiresAt });
-  sendJson(getPeerSocket(session, role), { type: 'peer-connected', role });
+  sendJson(getPeerSocket(message.sessionId, role), { type: 'peer-connected', role });
 }
 
 function handleRelayMessage(socket, rawData, isBinary) {
@@ -86,7 +75,7 @@ function handleRelayMessage(socket, rawData, isBinary) {
       return;
     }
     const session = getSession(socket.sessionId);
-    const target = getPeerSocket(session, socket.role);
+    const target = session ? getPeerSocket(socket.sessionId, socket.role) : null;
     if (target && target.readyState === 1) {
       target.send(rawData, { binary: true });
     }
@@ -122,7 +111,7 @@ function handleRelayMessage(socket, rawData, isBinary) {
         socket.close(4002, 'Join required');
         return;
       }
-      sendJson(getPeerSocket(getSession(socket.sessionId), socket.role), message);
+      sendJson(getPeerSocket(socket.sessionId, socket.role), message);
       break;
     }
     case 'kill-session': {
@@ -166,12 +155,12 @@ function handleWebSocket(socket, req) {
     if (!session) {
       return;
     }
-    const current = socket.role === 'initiator' ? session.initiatorSocket : session.joinerSocket;
+    const current = getRoleSocket(socket.sessionId, socket.role);
     if (current && current !== socket) {
       return;
     }
-    clearRoleSocket(socket.sessionId, socket.role);
-    const target = getPeerSocket(getSession(socket.sessionId), socket.role);
+    clearRoleSocket(socket.sessionId, socket.role, socket);
+    const target = getPeerSocket(socket.sessionId, socket.role);
     sendJson(target, { type: 'peer-disconnected' });
   });
 }
