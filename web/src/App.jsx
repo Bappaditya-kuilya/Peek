@@ -106,6 +106,7 @@ function SenderApp() {
 
   const transportRef = useRef(null);
   const nextFileIdRef = useRef(0);
+  const hasSentOfferRef = useRef(false);
   // Mirrors of the latest file lists so the session-close handler (which lives
   // in a [session] effect closure) can build an accurate ended-summary instead
   // of capturing stale empty arrays.
@@ -190,16 +191,25 @@ function SenderApp() {
     const socket = new WebSocket(session.wsUrl);
     socket.binaryType = 'arraybuffer';
     fallbackSocketRef.current = socket;
+    hasSentOfferRef.current = false;
 
-    socket.onopen = async () => {
-      socket.send(JSON.stringify({ sessionId: session.sessionId, token: session.token, type: 'initiator-join' }));
-      clipboard.flushDraft().catch(() => {});
+    async function sendOffer() {
+      if (hasSentOfferRef.current) {
+        return;
+      }
+      hasSentOfferRef.current = true;
       try {
         const offer = await webRtc.createOffer();
         socket.send(JSON.stringify({ type: 'webrtc-offer', offer }));
       } catch {
+        hasSentOfferRef.current = false;
         setStatusMessage('Unable to start the connection.');
       }
+    }
+
+    socket.onopen = () => {
+      socket.send(JSON.stringify({ sessionId: session.sessionId, token: session.token, type: 'initiator-join' }));
+      clipboard.flushDraft().catch(() => {});
     };
 
     socket.onmessage = async (event) => {
@@ -215,6 +225,7 @@ function SenderApp() {
           setPeerConnected(true);
           setStatusMessage('');
           clipboard.flushDraft().catch(() => {});
+          sendOffer().catch(() => {});
           if (fallbackTimeoutRef.current) {
             window.clearTimeout(fallbackTimeoutRef.current);
           }
@@ -749,6 +760,7 @@ function ReceiverSession() {
   const fullLinkMode = Boolean(token && keyBase64);
   const [key, setKey] = useState(null);
   const transportRef = useRef(null);
+  const reconnectTimeoutRef = useRef(null);
   const clipboard = useClipboard({
     encryptionKey: key,
     socketRef: fallbackSocketRef,
@@ -839,67 +851,88 @@ function ReceiverSession() {
   useEffect(() => {
     if (!fullLinkMode || !key) return undefined;
 
-    const socket = new WebSocket(RELAY_WS_URL);
-    socket.binaryType = 'arraybuffer';
-    fallbackSocketRef.current = socket;
+    let active = true;
 
-    socket.onopen = () => {
-      socket.send(JSON.stringify({ type: 'joiner-join', sessionId, token }));
-      clipboard.flushDraft().catch(() => {});
-    };
-
-    socket.onmessage = async (event) => {
-      if (typeof event.data !== 'string') {
-        await transfer.handleBinaryMessage(event.data);
+    function connect() {
+      if (!active) {
         return;
       }
 
-      const message = JSON.parse(event.data);
-      if (message.expiresAt) {
-        setLookupResult((current) => ({ ...(current || {}), expiresAt: message.expiresAt }));
-      }
+      const socket = new WebSocket(RELAY_WS_URL);
+      socket.binaryType = 'arraybuffer';
+      fallbackSocketRef.current = socket;
 
-      switch (message.type) {
-        case 'joiner-ready':
-          setJoined(true);
-          clipboard.flushDraft().catch(() => {});
-          break;
-        case 'webrtc-offer': {
-          const answer = await webRtc.acceptOffer(message.offer);
-          socket.send(JSON.stringify({ type: 'webrtc-answer', answer }));
-          break;
+      socket.onopen = () => {
+        socket.send(JSON.stringify({ type: 'joiner-join', sessionId, token }));
+        clipboard.flushDraft().catch(() => {});
+      };
+
+      socket.onmessage = async (event) => {
+        if (typeof event.data !== 'string') {
+          await transfer.handleBinaryMessage(event.data);
+          return;
         }
-        case 'webrtc-candidate':
-          await webRtc.addIceCandidate(message.candidate);
-          break;
-        case 'clipboard-push':
-          await clipboard.handleClipboardMessage(message);
-          break;
-        case 'view-share-push':
-          setIncomingPeekUrl(message.url || '');
-          break;
-        case 'peer-disconnected':
-          setStatusMessage('The other device disconnected.');
-          break;
-        default:
-          break;
-      }
-    };
 
-    socket.onclose = (event) => {
-      fallbackSocketRef.current = null;
-      if (SESSION_ENDED_CLOSE_CODES.has(event.code)) {
-        setStatusMessage('Session ended.');
+        const message = JSON.parse(event.data);
+        if (message.expiresAt) {
+          setLookupResult((current) => ({ ...(current || {}), expiresAt: message.expiresAt }));
+        }
+
+        switch (message.type) {
+          case 'joiner-ready':
+            setJoined(true);
+            setStatusMessage('');
+            clipboard.flushDraft().catch(() => {});
+            break;
+          case 'webrtc-offer': {
+            const answer = await webRtc.acceptOffer(message.offer);
+            socket.send(JSON.stringify({ type: 'webrtc-answer', answer }));
+            break;
+          }
+          case 'webrtc-candidate':
+            await webRtc.addIceCandidate(message.candidate);
+            break;
+          case 'clipboard-push':
+            await clipboard.handleClipboardMessage(message);
+            break;
+          case 'view-share-push':
+            setIncomingPeekUrl(message.url || '');
+            break;
+          case 'peer-disconnected':
+            setStatusMessage('The other device disconnected.');
+            break;
+          default:
+            break;
+        }
+      };
+
+      socket.onclose = (event) => {
+        fallbackSocketRef.current = null;
+        setJoined(false);
+        if (SESSION_ENDED_CLOSE_CODES.has(event.code)) {
+          setStatusMessage('Session ended.');
+          setStatusDanger(false);
+          return;
+        }
+        setStatusMessage('Connection interrupted. Retrying…');
         setStatusDanger(false);
-      } else {
-        setStatusMessage('Connection interrupted. Reopen the QR link if the session does not reconnect.');
-        setStatusDanger(false);
-      }
-      setJoined(false);
-    };
+        if (active) {
+          reconnectTimeoutRef.current = window.setTimeout(() => {
+            webRtc.closePeerConnection();
+            connect();
+          }, 1000);
+        }
+      };
+    }
+
+    connect();
 
     return () => {
-      socket.close();
+      active = false;
+      if (reconnectTimeoutRef.current) {
+        window.clearTimeout(reconnectTimeoutRef.current);
+      }
+      fallbackSocketRef.current?.close();
       webRtc.closePeerConnection();
     };
   }, [fullLinkMode, key, sessionId, token]);
