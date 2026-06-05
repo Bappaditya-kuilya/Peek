@@ -24,6 +24,7 @@ const PACKET_FILE_COMPLETE = 3;
 const PACKET_DOWNLOAD_NOTICE = 4;
 const MAX_CLIPBOARD_CHARS = 2000;
 const CLIPBOARD_DEBOUNCE_MS = 500;
+const SESSION_ENDED_CLOSE_CODES = new Set([4000, 4001]);
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -553,7 +554,17 @@ async function handleClipboardMessage(message) {
 }
 
 async function setupConnection() {
-  state.key = await importKey(state.joinInfo.keyBase64);
+  if (!state.joinInfo.keyBase64 || !state.joinInfo.sessionId || !state.joinInfo.token) {
+    return;
+  }
+
+  if (state.socket && (state.socket.readyState === WebSocket.OPEN || state.socket.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
+  if (!state.key) {
+    state.key = await importKey(state.joinInfo.keyBase64);
+  }
   state.socket = new WebSocket(RELAY_WS_URL);
   state.socket.binaryType = 'arraybuffer';
   state.peerConnection = new RTCPeerConnection({
@@ -626,9 +637,30 @@ async function setupConnection() {
     }
   };
 
-  state.socket.onclose = () => {
-    state.sessionEnded = true;
-    render();
+  state.socket.onclose = (event) => {
+    state.socket = null;
+    state.joined = false;
+
+    if (SESSION_ENDED_CLOSE_CODES.has(event.code)) {
+      state.sessionEnded = true;
+      render();
+      return;
+    }
+
+    if (!state.sessionEnded) {
+      state.statusMessage = 'Connection interrupted. Retrying…';
+      state.statusDanger = false;
+      render();
+      window.setTimeout(() => {
+        if (!state.sessionEnded) {
+          setupConnection().catch(() => {
+            state.statusMessage = 'Unable to reconnect. Refresh and scan again.';
+            state.statusDanger = true;
+            render();
+          });
+        }
+      }, 750);
+    }
   };
 
   window.setTimeout(() => {
