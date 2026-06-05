@@ -14,6 +14,7 @@ export function useClipboard({ encryptionKey, socketRef }) {
   const [copyState, setCopyState] = useState('idle');
   const debounceRef = useRef(null);
   const copyResetRef = useRef(null);
+  const pendingTextRef = useRef('');
 
   useEffect(() => {
     return () => {
@@ -29,22 +30,30 @@ export function useClipboard({ encryptionKey, socketRef }) {
   function updateDraft(nextValue) {
     const normalized = normalizeClipboardText(nextValue);
     setDraftText(normalized);
+    pendingTextRef.current = normalized;
 
     if (debounceRef.current) {
       window.clearTimeout(debounceRef.current);
     }
 
-    debounceRef.current = window.setTimeout(async () => {
-      const socket = socketRef.current;
-      if (!encryptionKey || socket?.readyState !== WebSocket.OPEN) {
-        return;
-      }
-
-      try {
-        const payload = await encryptClipboardText(encryptionKey, normalized);
-        socket.send(JSON.stringify({ type: 'clipboard-push', payload }));
-      } catch {}
+    debounceRef.current = window.setTimeout(() => {
+      flushDraft().catch(() => {});
     }, DEBOUNCE_MS);
+  }
+
+  async function flushDraft() {
+    const socket = socketRef.current;
+    if (!encryptionKey || socket?.readyState !== WebSocket.OPEN) {
+      return false;
+    }
+
+    try {
+      const payload = await encryptClipboardText(encryptionKey, pendingTextRef.current);
+      socket.send(JSON.stringify({ type: 'clipboard-push', payload }));
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async function handleClipboardMessage(message) {
@@ -79,6 +88,7 @@ export function useClipboard({ encryptionKey, socketRef }) {
     copyReceivedText,
     copyState,
     draftText,
+    flushDraft,
     handleClipboardMessage,
     maxChars: MAX_CLIPBOARD_CHARS,
     receivedText,
