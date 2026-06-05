@@ -24,6 +24,7 @@ const SCREEN_HOME = 'home';
 const SCREEN_PICKER = 'picker';
 const SCREEN_ACTIVE = 'active';
 const SCREEN_ENDED = 'ended';
+const SESSION_ENDED_CLOSE_CODES = new Set([4000, 4001]);
 
 const RELAY_HTTP_URL = getRelayHttpUrl();
 const RELAY_WS_URL = getRelayWsUrl();
@@ -880,9 +881,15 @@ function ReceiverSession() {
       }
     };
 
-    socket.onclose = () => {
-      setStatusMessage('Session ended.');
-      setStatusDanger(false);
+    socket.onclose = (event) => {
+      fallbackSocketRef.current = null;
+      if (SESSION_ENDED_CLOSE_CODES.has(event.code)) {
+        setStatusMessage('Session ended.');
+        setStatusDanger(false);
+      } else {
+        setStatusMessage('Connection interrupted. Reopen the QR link if the session does not reconnect.');
+        setStatusDanger(false);
+      }
       setJoined(false);
     };
 
