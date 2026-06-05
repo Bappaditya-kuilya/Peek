@@ -192,6 +192,7 @@ function SenderApp() {
 
     socket.onopen = async () => {
       socket.send(JSON.stringify({ sessionId: session.sessionId, token: session.token, type: 'initiator-join' }));
+      clipboard.flushDraft().catch(() => {});
       try {
         const offer = await webRtc.createOffer();
         socket.send(JSON.stringify({ type: 'webrtc-offer', offer }));
@@ -212,6 +213,7 @@ function SenderApp() {
         case 'peer-connected':
           setPeerConnected(true);
           setStatusMessage('');
+          clipboard.flushDraft().catch(() => {});
           if (fallbackTimeoutRef.current) {
             window.clearTimeout(fallbackTimeoutRef.current);
           }
@@ -837,6 +839,7 @@ function ReceiverSession() {
 
     socket.onopen = () => {
       socket.send(JSON.stringify({ type: 'joiner-join', sessionId, token }));
+      clipboard.flushDraft().catch(() => {});
     };
 
     socket.onmessage = async (event) => {
@@ -853,6 +856,7 @@ function ReceiverSession() {
       switch (message.type) {
         case 'joiner-ready':
           setJoined(true);
+          clipboard.flushDraft().catch(() => {});
           break;
         case 'webrtc-offer': {
           const answer = await webRtc.acceptOffer(message.offer);
