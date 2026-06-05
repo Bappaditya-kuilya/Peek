@@ -739,8 +739,13 @@ function ReceiverSession() {
   const [outgoingFiles, setOutgoingFiles] = useState([]);
   const [confirmKill, setConfirmKill] = useState(false);
   const [incomingPeekUrl, setIncomingPeekUrl] = useState('');
+  const receiverUrl = new URL(window.location.href);
+  const queryToken = receiverUrl.searchParams.get('t') || '';
+  const queryKeyBase64 = receiverUrl.searchParams.get('k') || '';
   const fragment = window.location.hash.replace(/^#/, '');
-  const [token, keyBase64] = fragment.split('.');
+  const [fragmentToken, fragmentKeyBase64] = fragment.split('.');
+  const token = queryToken || fragmentToken || '';
+  const keyBase64 = queryKeyBase64 || fragmentKeyBase64 || '';
   const fullLinkMode = Boolean(token && keyBase64);
   const [key, setKey] = useState(null);
   const transportRef = useRef(null);

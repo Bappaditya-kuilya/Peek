@@ -64,7 +64,7 @@ export function useSession() {
 
     const payload = await response.json();
     const receiverBaseUrl = getReceiverBaseUrl();
-    const joinUrl = `${receiverBaseUrl}/${payload.sessionId}#${payload.token}.${keyBase64}`;
+    const joinUrl = `${receiverBaseUrl}/${payload.sessionId}?t=${encodeURIComponent(payload.token)}&k=${encodeURIComponent(keyBase64)}`;
 
     const nextSession = {
       ...payload,

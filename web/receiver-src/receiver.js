@@ -51,17 +51,22 @@ const state = {
 function parseJoinInfo() {
   const url = new URL(window.location.href);
   const match = url.pathname.match(/\/r\/([^/]+)/);
-  const fragment = window.location.hash.replace(/^#/, '');
   if (!match) {
     return { mode: 'code-entry' };
   }
 
-  const [token, keyBase64] = fragment.split('.');
+  const queryToken = url.searchParams.get('t') || '';
+  const queryKeyBase64 = url.searchParams.get('k') || '';
+  const fragment = window.location.hash.replace(/^#/, '');
+  const [fragmentToken, fragmentKeyBase64] = fragment.split('.');
+  const token = queryToken || fragmentToken || '';
+  const keyBase64 = queryKeyBase64 || fragmentKeyBase64 || '';
+
   return {
-    keyBase64: keyBase64 || '',
+    keyBase64,
     mode: token && keyBase64 ? 'full-link' : 'needs-full-link',
     sessionId: match[1],
-    token: token || '',
+    token,
   };
 }
 
