@@ -8,14 +8,25 @@ test('localhost dev origins remain allowed', () => {
   assert.equal(security.isAllowedOrigin('http://localhost:5174'), true);
 });
 
+test('local network dev origins remain allowed', () => {
+  assert.equal(security.isAllowedOrigin('http://192.168.1.25:5173'), true);
+  assert.equal(security.isAllowedOrigin('http://192.168.1.25:5174'), true);
+  assert.equal(security.isAllowedOrigin('http://10.0.0.42:5173'), true);
+  assert.equal(security.isAllowedOrigin('http://my-machine.local:5173'), true);
+});
+
 test('unknown origins are rejected', () => {
   assert.equal(security.isAllowedOrigin('https://evil.example'), false);
+  assert.equal(security.isAllowedOrigin('http://192.168.1.25:3000'), false);
 });
 
 test('wildcard origin patterns require protocol and host suffix match', () => {
   assert.equal(security.originMatchesAllowedPattern('https://preview.vercel.app', 'https://*.vercel.app'), true);
   assert.equal(security.originMatchesAllowedPattern('http://preview.vercel.app', 'https://*.vercel.app'), false);
   assert.equal(security.originMatchesAllowedPattern('https://vercel.app.evil.example', 'https://*.vercel.app'), false);
+  assert.equal(security.originMatchesAllowedPattern('http://192.168.1.25:5173', 'http://192.168.*.*:5173'), true);
+  assert.equal(security.originMatchesAllowedPattern('http://10.0.0.42:5174', 'http://10.*.*.*:5174'), true);
+  assert.equal(security.originMatchesAllowedPattern('http://my-machine.local:5173', 'http://*.local:5173'), true);
 });
 
 test('parseTrustProxy handles booleans, hop counts, and subnet strings', () => {

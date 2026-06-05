@@ -1,6 +1,15 @@
 const PRODUCTION_RELAY_HTTP_URL = 'https://peek-relay.fly.dev';
-const isLocalHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-const RELAY_HTTP_URL = isLocalHost ? 'http://localhost:3000' : PRODUCTION_RELAY_HTTP_URL;
+const LOCAL_RELAY_PORT = '3000';
+const isLocalHost = (
+  window.location.hostname === 'localhost' ||
+  window.location.hostname === '127.0.0.1' ||
+  window.location.hostname === '0.0.0.0' ||
+  window.location.hostname === '[::1]' ||
+  /^\d{1,3}(?:\.\d{1,3}){3}$/.test(window.location.hostname)
+);
+const RELAY_HTTP_URL = isLocalHost
+  ? `${window.location.protocol === 'https:' ? 'https:' : 'http:'}//${window.location.hostname}:${LOCAL_RELAY_PORT}`
+  : PRODUCTION_RELAY_HTTP_URL;
 const IV_LENGTH = 12;
 
 const app = document.getElementById('app');

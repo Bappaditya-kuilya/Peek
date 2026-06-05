@@ -2,7 +2,7 @@ const { createInMemoryAbuseStore } = require('./stores/inMemoryAbuseStore');
 
 const defaultOrigins = process.env.NODE_ENV === 'production'
   ? 'https://peek.dev,https://*.vercel.app'
-  : 'https://peek.dev,https://*.vercel.app,http://localhost:5173,http://localhost:5174';
+  : 'https://peek.dev,https://*.vercel.app,http://localhost:5173,http://localhost:5174,http://*.local:5173,http://*.local:5174,http://192.168.*.*:5173,http://192.168.*.*:5174,http://10.*.*.*:5173,http://10.*.*.*:5174';
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || defaultOrigins)
   .split(',')
@@ -100,10 +100,34 @@ function originMatchesAllowedPattern(origin, pattern) {
 
   try {
     const parsedOrigin = new URL(origin);
-    const parsedPattern = new URL(pattern.replace('*.', 'wildcard.'));
-    const suffix = parsedPattern.hostname.replace(/^wildcard\./, '.');
+    const parsedPattern = new URL(pattern);
 
-    return parsedOrigin.protocol === parsedPattern.protocol && parsedOrigin.hostname.endsWith(suffix);
+    if (parsedOrigin.protocol !== parsedPattern.protocol) {
+      return false;
+    }
+
+    if (parsedOrigin.port !== parsedPattern.port) {
+      return false;
+    }
+
+    const hostnamePattern = parsedPattern.hostname;
+
+    if (hostnamePattern.startsWith('*.')) {
+      const suffix = hostnamePattern.slice(1);
+      return parsedOrigin.hostname.endsWith(suffix);
+    }
+
+    const escapedPattern = hostnamePattern
+      .split('.')
+      .map((segment) => {
+        if (segment === '*') {
+          return '[^.]+';
+        }
+        return segment.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+      })
+      .join('\\.');
+
+    return new RegExp(`^${escapedPattern}$`, 'i').test(parsedOrigin.hostname);
   } catch {
     return false;
   }
