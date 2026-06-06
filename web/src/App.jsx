@@ -25,6 +25,7 @@ const SCREEN_PICKER = 'picker';
 const SCREEN_ACTIVE = 'active';
 const SCREEN_ENDED = 'ended';
 const SESSION_ENDED_CLOSE_CODES = new Set([4000, 4001]);
+const SESSION_REPLACED_CLOSE_CODE = 4005;
 
 const RELAY_HTTP_URL = getRelayHttpUrl();
 const RELAY_WS_URL = getRelayWsUrl();
@@ -262,7 +263,9 @@ function SenderApp() {
     };
 
     socket.onclose = (event) => {
-      fallbackSocketRef.current = null;
+      if (fallbackSocketRef.current === socket) {
+        fallbackSocketRef.current = null;
+      }
       // 4000 = killed by the other peer, 4001 = expired server-side. Either way
       // the session is gone mid-use and the sender must be told. Normal local
       // teardown closes with a non-4000 code, so it won't trip this.
@@ -272,6 +275,9 @@ function SenderApp() {
           ...receivedFilesRef.current.map((file) => ({ name: file.name, status: file.status })),
         ]);
         setScreen(SCREEN_ENDED);
+      }
+      if (event.code === SESSION_REPLACED_CLOSE_CODE) {
+        return;
       }
     };
 
@@ -907,11 +913,16 @@ function ReceiverSession() {
       };
 
       socket.onclose = (event) => {
-        fallbackSocketRef.current = null;
+        if (fallbackSocketRef.current === socket) {
+          fallbackSocketRef.current = null;
+        }
         setJoined(false);
         if (SESSION_ENDED_CLOSE_CODES.has(event.code)) {
           setStatusMessage('Session ended.');
           setStatusDanger(false);
+          return;
+        }
+        if (event.code === SESSION_REPLACED_CLOSE_CODE) {
           return;
         }
         setStatusMessage('Connection interrupted. Retrying…');
