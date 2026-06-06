@@ -1,5 +1,5 @@
-const PRODUCTION_HTTP_URL = 'https://peek-relay.fly.dev';
-const PRODUCTION_WS_URL = 'wss://peek-relay.fly.dev';
+const PRODUCTION_HTTP_URL = 'https://passr-relay-production.up.railway.app';
+const PRODUCTION_WS_URL = 'wss://passr-relay-production.up.railway.app';
 
 function isLocalHost(hostname = window.location.hostname) {
   return (

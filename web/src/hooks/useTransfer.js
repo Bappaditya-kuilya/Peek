@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { encryptChunk, decryptChunk } from './useCrypto.js';
 
 const CHUNK_SIZE = 48 * 1024;
@@ -118,8 +119,8 @@ export function useTransfer({
   onReceiveProgress,
   onSendProgress,
 }) {
-  const incomingFiles = new Map();
-  const outgoingFileMap = new Map();
+  const incomingFilesRef = useRef(new Map());
+  const outgoingFileMapRef = useRef(new Map());
 
   async function sendEncryptedPacket(transport, packetBuffer) {
     const encrypted = await encryptChunk(encryptionKey, packetBuffer);
@@ -127,6 +128,7 @@ export function useTransfer({
   }
 
   async function sendManifest(files, transport) {
+    const outgoingFileMap = outgoingFileMapRef.current;
     outgoingFileMap.clear();
     files.forEach((file, index) => {
       outgoingFileMap.set(index, file);
@@ -166,6 +168,8 @@ export function useTransfer({
   }
 
   async function handleBinaryMessage(binaryData) {
+    const incomingFiles = incomingFilesRef.current;
+    const outgoingFileMap = outgoingFileMapRef.current;
     let decrypted;
     try {
       decrypted = await decryptChunk(encryptionKey, ensureArrayBuffer(binaryData));

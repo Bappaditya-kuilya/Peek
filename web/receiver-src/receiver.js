@@ -1,7 +1,7 @@
 import { sanitizeFilename, safeBaseName } from './sanitize.js';
 
-const PRODUCTION_RELAY_HTTP_URL = 'https://peek-relay.fly.dev';
-const PRODUCTION_RELAY_WS_URL = 'wss://peek-relay.fly.dev';
+const PRODUCTION_RELAY_HTTP_URL = 'https://passr-relay-production.up.railway.app';
+const PRODUCTION_RELAY_WS_URL = 'wss://passr-relay-production.up.railway.app';
 const LOCAL_RELAY_PORT = '3000';
 const isLocalHost = (
   window.location.hostname === 'localhost' ||
