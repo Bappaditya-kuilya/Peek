@@ -46,7 +46,7 @@ export function QRDisplay({ expiresAt, joinUrl, numericCode }) {
         {timeLabel}
       </div>
       <div className="qr-copy">
-        No camera? Type <span className="code">{numericCode}</span> at `/r`
+        No camera? Type <span className="code">{numericCode}</span> at peekapp.vercel.app/r
       </div>
       <div className="notice-banner warning">Keep this screen open until the transfer completes.</div>
     </div>

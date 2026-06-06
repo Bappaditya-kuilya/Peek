@@ -152,6 +152,7 @@ function SenderApp() {
   const transportRef = useRef(null);
   const nextFileIdRef = useRef(0);
   const hasSentOfferRef = useRef(false);
+  const hasConnectedPeerRef = useRef(false);
   // Mirrors of the latest file lists so the session-close handler (which lives
   // in a [session] effect closure) can build an accurate ended-summary instead
   // of capturing stale empty arrays.
@@ -275,6 +276,7 @@ function SenderApp() {
       switch (message.type) {
         case 'joiner-ready':
         case 'peer-connected':
+          hasConnectedPeerRef.current = true;
           setPeerConnected(true);
           setStatusMessage('');
           clipboard.flushDraft().catch(() => {});
@@ -331,6 +333,12 @@ function SenderApp() {
       if (event.code === SESSION_REPLACED_CLOSE_CODE) {
         return;
       }
+      if (!hasConnectedPeerRef.current) {
+        return;
+      }
+      setPeerConnected(false);
+      setTransportMode(TRANSPORT_RECONNECTING);
+      setStatusMessage('Connection interrupted. Waiting for the other device to reconnect…');
     };
 
     return () => {
@@ -840,6 +848,7 @@ function ReceiverSession() {
   const [key, setKey] = useState(null);
   const transportRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
+  const hasJoinedRef = useRef(false);
   const clipboard = useClipboard({
     encryptionKey: key,
     socketRef: fallbackSocketRef,
@@ -969,6 +978,7 @@ function ReceiverSession() {
 
         switch (message.type) {
           case 'joiner-ready':
+            hasJoinedRef.current = true;
             setJoined(true);
             setTransportMode(TRANSPORT_RELAY);
             setStatusMessage('');
@@ -1011,7 +1021,11 @@ function ReceiverSession() {
         if (event.code === SESSION_REPLACED_CLOSE_CODE) {
           return;
         }
-        setStatusMessage('Connection interrupted. Retrying…');
+        if (hasJoinedRef.current) {
+          setStatusMessage('Connection interrupted. Retrying…');
+        } else {
+          setStatusMessage('Connecting to device…');
+        }
         setStatusDanger(false);
         if (active) {
           reconnectTimeoutRef.current = window.setTimeout(() => {
