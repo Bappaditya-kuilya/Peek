@@ -2,6 +2,7 @@ const { createInMemorySessionStore } = require('./stores/inMemorySessionStore');
 const { createInMemoryViewStore } = require('./stores/inMemoryViewStore');
 const { createInMemoryAbuseStore } = require('./stores/inMemoryAbuseStore');
 const { createRedisAbuseStore } = require('./stores/redisAbuseStore');
+const { createInMemoryRelayBus, setRelayBus } = require('./relayBus');
 const { setAbuseStore } = require('./security');
 const { setSessionStore } = require('./session');
 const { setViewStore } = require('./viewStore');
@@ -17,12 +18,14 @@ async function initializeStorage() {
     setSessionStore(createInMemorySessionStore());
     setViewStore(createInMemoryViewStore());
     setAbuseStore(createInMemoryAbuseStore());
+    setRelayBus(createInMemoryRelayBus());
     return { mode: 'memory' };
   }
 
   try {
     const { createClient } = require('redis');
     const { createRedisSessionStore } = require('./stores/redisSessionStore');
+    const { createRedisRelayBus } = require('./stores/redisRelayBus');
     const { createRedisViewStore } = require('./stores/redisViewStore');
 
     const redis = createClient({
@@ -38,13 +41,21 @@ async function initializeStorage() {
 
     await redis.connect();
 
+    const pub = redis.duplicate();
+    const sub = redis.duplicate();
+    await pub.connect();
+    await sub.connect();
+
     setSessionStore(createRedisSessionStore({ redis }));
     setViewStore(createRedisViewStore({ redis }));
     setAbuseStore(createRedisAbuseStore({ redis }));
+    setRelayBus(createRedisRelayBus({ pub, redis, sub }));
 
     return {
       mode: 'redis',
+      pub,
       redis,
+      sub,
     };
   } catch (error) {
     if (requireRedis) {
@@ -54,6 +65,7 @@ async function initializeStorage() {
     setSessionStore(createInMemorySessionStore());
     setViewStore(createInMemoryViewStore());
     setAbuseStore(createInMemoryAbuseStore());
+    setRelayBus(createInMemoryRelayBus());
     return {
       mode: 'memory-fallback',
       error,
