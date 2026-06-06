@@ -8,3 +8,5 @@ web/public/receiver/
 .env
 .env.local
 .env.*.local
+.vercel
+.env*

@@ -15,7 +15,6 @@ const {
   isAllowedOrigin,
   normalizeIp,
 } = require('./security');
-const { getRelayBus } = require('./relayBus');
 const MAX_JSON_MESSAGE_BYTES = 32 * 1024;
 
 function sendJson(socket, payload) {
@@ -25,22 +24,7 @@ function sendJson(socket, payload) {
   socket.send(JSON.stringify(payload));
 }
 
-async function closeRemoteRole(sessionId, role) {
-  const relayBus = getRelayBus();
-  const owner = await relayBus.getRoleOwner(sessionId, role);
-  if (!owner || owner === relayBus.getInstanceId()) {
-    return false;
-  }
-
-  await relayBus.sendToInstance(owner, {
-    type: 'close-role',
-    sessionId,
-    role,
-  });
-  return true;
-}
-
-async function sendToPeer(sessionId, role, payload, options = {}) {
+function sendToPeer(sessionId, role, payload, options = {}) {
   const target = getPeerSocket(sessionId, role);
   if (target && target.readyState === 1) {
     if (options.binary) {
@@ -50,95 +34,15 @@ async function sendToPeer(sessionId, role, payload, options = {}) {
     }
     return true;
   }
-
-  const peerRole = role === 'initiator' ? 'joiner' : 'initiator';
-  const relayBus = getRelayBus();
-  const owner = await relayBus.getRoleOwner(sessionId, peerRole);
-  if (!owner || owner === relayBus.getInstanceId()) {
-    return false;
-  }
-
-  await relayBus.sendToInstance(owner, {
-    type: options.binary ? 'relay-binary' : 'relay-json',
-    sessionId,
-    role: peerRole,
-    payload: options.binary ? Buffer.from(payload).toString('base64') : payload,
-  });
-  return true;
+  return false;
 }
 
-async function notifyPeerConnected(sessionId, role) {
-  await sendToPeer(sessionId, role, { type: 'peer-connected', role });
+function notifyPeerConnected(sessionId, role) {
+  sendToPeer(sessionId, role, { type: 'peer-connected', role });
 }
 
-async function notifyPeerDisconnected(sessionId, role) {
-  await sendToPeer(sessionId, role, { type: 'peer-disconnected' });
-}
-
-async function closeSessionAcrossInstances(sessionId, reason = 'Session ended', closeCode = 4000) {
-  const relayBus = getRelayBus();
-  for (const role of ['initiator', 'joiner']) {
-    const owner = await relayBus.getRoleOwner(sessionId, role);
-    if (owner && owner !== relayBus.getInstanceId()) {
-      await relayBus.sendToInstance(owner, {
-        type: 'kill-session',
-        closeCode,
-        reason,
-        sessionId,
-      });
-    }
-  }
-}
-
-function attachRelayBusHandler() {
-  const relayBus = getRelayBus();
-  if (relayBus._attached) {
-    return;
-  }
-
-  relayBus.setMessageHandler(async (message) => {
-    if (!message?.sessionId) {
-      return;
-    }
-
-    switch (message.type) {
-      case 'close-role': {
-        const socket = getRoleSocket(message.sessionId, message.role);
-        if (socket) {
-          socket.replaced = true;
-          socket.close(4005, 'Replaced by reconnect');
-        }
-        break;
-      }
-      case 'relay-json': {
-        const socket = getRoleSocket(message.sessionId, message.role);
-        sendJson(socket, message.payload);
-        break;
-      }
-      case 'relay-binary': {
-        const socket = getRoleSocket(message.sessionId, message.role);
-        if (socket && socket.readyState === 1) {
-          socket.send(Buffer.from(message.payload, 'base64'), { binary: true });
-        }
-        break;
-      }
-      case 'kill-session': {
-        const initiator = getRoleSocket(message.sessionId, 'initiator');
-        const joiner = getRoleSocket(message.sessionId, 'joiner');
-        for (const socket of [initiator, joiner]) {
-          if (socket) {
-            socket.close(message.closeCode || 4000, message.reason || 'Session ended');
-          }
-        }
-        clearRoleSocket(message.sessionId, 'initiator');
-        clearRoleSocket(message.sessionId, 'joiner');
-        break;
-      }
-      default:
-        break;
-    }
-  });
-  relayBus._attached = true;
+function notifyPeerDisconnected(sessionId, role) {
+  sendToPeer(sessionId, role, { type: 'peer-disconnected' });
 }
 
 async function handleJoinMessage(socket, message, role) {
@@ -169,16 +73,14 @@ async function handleJoinMessage(socket, message, role) {
       existing.close(4005, 'Replaced by reconnect');
     } catch {}
   }
-  await closeRemoteRole(message.sessionId, role);
 
   setRoleSocket(message.sessionId, role, socket);
-  await getRelayBus().claimRole(message.sessionId, role);
   await markRoleJoined(message.sessionId, role);
   socket.sessionId = message.sessionId;
   socket.role = role;
 
   sendJson(socket, { type: `${role}-ready`, expiresAt: session.expiresAt });
-  await notifyPeerConnected(message.sessionId, role);
+  notifyPeerConnected(message.sessionId, role);
 }
 
 async function handleRelayMessage(socket, rawData, isBinary) {
@@ -195,7 +97,7 @@ async function handleRelayMessage(socket, rawData, isBinary) {
     }
     const session = await getSession(socket.sessionId);
     if (session) {
-      await sendToPeer(socket.sessionId, socket.role, rawData, { binary: true });
+      sendToPeer(socket.sessionId, socket.role, rawData, { binary: true });
     }
     return;
   }
@@ -224,20 +126,17 @@ async function handleRelayMessage(socket, rawData, isBinary) {
     case 'webrtc-candidate':
     case 'clipboard-push':
     case 'view-share-push':
-    case 'relay-control': {
       if (!socket.sessionId || !socket.role) {
         socket.close(4002, 'Join required');
         return;
       }
-      await sendToPeer(socket.sessionId, socket.role, message);
+      sendToPeer(socket.sessionId, socket.role, message);
       break;
-    }
     case 'kill-session': {
       if (!socket.sessionId) {
         socket.close(4002, 'Join required');
         return;
       }
-      await closeSessionAcrossInstances(socket.sessionId, 'Session ended', 4000);
       await killSession(socket.sessionId, 'Session ended', 4000);
       break;
     }
@@ -247,7 +146,6 @@ async function handleRelayMessage(socket, rawData, isBinary) {
 }
 
 async function handleWebSocket(socket, req) {
-  attachRelayBusHandler();
   const origin = req.headers.origin;
   if (!isAllowedOrigin(origin)) {
     socket.close(4003, 'Forbidden origin');
@@ -282,8 +180,7 @@ async function handleWebSocket(socket, req) {
       return;
     }
     clearRoleSocket(socket.sessionId, socket.role, socket);
-    await getRelayBus().releaseRole(socket.sessionId, socket.role);
-    await notifyPeerDisconnected(socket.sessionId, socket.role);
+    notifyPeerDisconnected(socket.sessionId, socket.role);
   });
 }
 

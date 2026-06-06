@@ -1,6 +1,7 @@
 export function ClipboardBar({
   copyLabel,
   draftText,
+  disabled = false,
   maxChars,
   onChange,
   onCopy,
@@ -19,9 +20,10 @@ export function ClipboardBar({
 
       <textarea
         className="clipboard-textarea"
+        disabled={disabled}
         maxLength={maxChars}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="Type or paste here. It syncs to the connected device automatically."
+        placeholder={disabled ? 'Clipboard sync is disabled on this relay.' : 'Type or paste here. It syncs to the connected device automatically.'}
         rows={4}
         value={draftText}
       />
