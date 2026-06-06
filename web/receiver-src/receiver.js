@@ -25,6 +25,7 @@ const PACKET_DOWNLOAD_NOTICE = 4;
 const MAX_CLIPBOARD_CHARS = 2000;
 const CLIPBOARD_DEBOUNCE_MS = 500;
 const SESSION_ENDED_CLOSE_CODES = new Set([4000, 4001]);
+const SESSION_REPLACED_CLOSE_CODE = 4005;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -643,12 +644,18 @@ async function setupConnection() {
   };
 
   state.socket.onclose = (event) => {
-    state.socket = null;
+    if (state.socket === event.target) {
+      state.socket = null;
+    }
     state.joined = false;
 
     if (SESSION_ENDED_CLOSE_CODES.has(event.code)) {
       state.sessionEnded = true;
       render();
+      return;
+    }
+
+    if (event.code === SESSION_REPLACED_CLOSE_CODE) {
       return;
     }
 
