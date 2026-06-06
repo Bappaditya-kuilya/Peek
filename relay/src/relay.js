@@ -84,11 +84,18 @@ async function handleJoinMessage(socket, message, role) {
   socket.sessionId = message.sessionId;
   socket.role = role;
 
+  const peerRole = role === 'initiator' ? 'joiner' : 'initiator';
+  const peerSocket = getRoleSocket(message.sessionId, peerRole);
+  const peerJoinedAt = peerRole === 'initiator' ? session.initiatorJoinedAt : session.joinerJoinedAt;
+
   console.log('Peek join accepted', {
     role,
     sessionId: message.sessionId,
   });
   sendJson(socket, { type: `${role}-ready`, expiresAt: session.expiresAt });
+  if (peerSocket || peerJoinedAt) {
+    sendJson(socket, { type: 'peer-connected', role: peerRole });
+  }
   notifyPeerConnected(message.sessionId, role);
 }
 

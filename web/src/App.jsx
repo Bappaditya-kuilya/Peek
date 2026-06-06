@@ -159,6 +159,20 @@ function SenderApp() {
   const sharedFilesRef = useRef([]);
   const receivedFilesRef = useRef([]);
 
+  useEffect(() => {
+    window.__peekSession = session
+      ? {
+          role: 'initiator',
+          sessionId: session.sessionId,
+          tokenPresent: Boolean(session.token),
+          keyPresent: Boolean(session.key),
+          transportMode,
+          peerConnected,
+          wsUrl: session.wsUrl,
+        }
+      : null;
+  }, [peerConnected, session, transportMode]);
+
   function addActivity(fileName) {
     setActivity((current) => [
       { fileName, id: `${fileName}-${Date.now()}`, when: agoLabel(Date.now()) },
@@ -273,7 +287,11 @@ function SenderApp() {
       }
 
       const message = JSON.parse(event.data);
+      console.log('Sender WebSocket message:', message.type, message);
       switch (message.type) {
+        case 'initiator-ready':
+          setStatusMessage('Waiting for the other device to join…');
+          break;
         case 'joiner-ready':
         case 'peer-connected':
           hasConnectedPeerRef.current = true;
@@ -931,9 +949,11 @@ function ReceiverSession() {
       .then((importedKey) => {
         if (active) {
           setKey(importedKey);
+          console.log('Key imported successfully');
         }
       })
-      .catch(() => {
+      .catch((error) => {
+        console.error('Key import failed:', error);
         setStatusMessage('Unable to read the full link.');
         setStatusDanger(true);
       });
@@ -945,6 +965,19 @@ function ReceiverSession() {
     // here caused the key to be recreated on every expiresAt update, which tore
     // down and reopened the WebSocket in a loop.
   }, [fullLinkMode, keyBase64]);
+
+  useEffect(() => {
+    window.__peekSession = {
+      role: 'joiner',
+      sessionId,
+      tokenPresent: Boolean(token),
+      keyImported: Boolean(key),
+      keyParamPresent: Boolean(keyBase64),
+      joined,
+      transportMode,
+      wsUrl: RELAY_WS_URL,
+    };
+  }, [joined, key, keyBase64, sessionId, token, transportMode]);
 
   useEffect(() => {
     if (!fullLinkMode || !key) return undefined;
