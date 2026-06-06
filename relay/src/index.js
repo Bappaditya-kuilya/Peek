@@ -216,16 +216,13 @@ app.get('/health', (req, res) => {
 });
 
 async function start() {
-  const { initializeStorage } = require('./storage');
-  const storageState = await initializeStorage();
-
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server, maxPayload: 256 * 1024 });
   wss.on('connection', handleWebSocket);
 
   const port = process.env.PORT || 3000;
   server.listen(port, () => {
-    console.log(`Peek relay running on port ${port} using ${storageState.mode} storage`);
+    console.log(`Peek relay running on port ${port}`);
   });
 }
 

@@ -26,6 +26,10 @@ const SCREEN_ACTIVE = 'active';
 const SCREEN_ENDED = 'ended';
 const SESSION_ENDED_CLOSE_CODES = new Set([4000, 4001]);
 const SESSION_REPLACED_CLOSE_CODE = 4005;
+const TRANSPORT_WAITING = 'waiting';
+const TRANSPORT_DIRECT = 'direct';
+const TRANSPORT_RELAY = 'relay';
+const TRANSPORT_RECONNECTING = 'reconnecting';
 
 const RELAY_HTTP_URL = getRelayHttpUrl();
 const RELAY_WS_URL = getRelayWsUrl();
@@ -108,6 +112,13 @@ function agoLabel(timestamp) {
   return `${Math.floor(diff / 60)}m ago`;
 }
 
+function getTransportLabel(mode, peerConnected) {
+  if (mode === TRANSPORT_DIRECT) return 'Direct';
+  if (mode === TRANSPORT_RELAY) return 'Encrypted relay';
+  if (mode === TRANSPORT_RECONNECTING) return 'Reconnecting';
+  return peerConnected ? 'Peer detected' : 'Waiting for peer';
+}
+
 function SenderApp() {
   const fileInputRef = useRef(null);
   const sendBackInputRef = useRef(null);
@@ -122,7 +133,7 @@ function SenderApp() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [sessionEndedSummary, setSessionEndedSummary] = useState([]);
   const [peerConnected, setPeerConnected] = useState(false);
-  const [transportReady, setTransportReady] = useState(false);
+  const [transportMode, setTransportMode] = useState(TRANSPORT_WAITING);
   const [transferStarted, setTransferStarted] = useState(false);
   const [peekFile, setPeekFile] = useState(null);
   const [peekExpiresIn, setPeekExpiresIn] = useState(15);
@@ -186,16 +197,16 @@ function SenderApp() {
     },
     onConnectionStateChange(state) {
       if (state === 'connected') {
-        setTransportReady(true);
+        setTransportMode(TRANSPORT_DIRECT);
         setStatusMessage('');
       } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-        setTransportReady(false);
+        setTransportMode((current) => (current === TRANSPORT_DIRECT ? TRANSPORT_RELAY : current));
       }
     },
     onDataChannel(channel) {
       channel.binaryType = 'arraybuffer';
       channel.onopen = async () => {
-        setTransportReady(true);
+        setTransportMode(TRANSPORT_DIRECT);
         setStatusMessage('');
         if (!transferStarted && selectedFiles.length) {
           setTransferStarted(true);
@@ -209,7 +220,7 @@ function SenderApp() {
         await transfer.handleBinaryMessage(event.data);
       };
       channel.onclose = () => {
-        setTransportReady(false);
+        setTransportMode((current) => (current === TRANSPORT_DIRECT ? TRANSPORT_RELAY : current));
       };
     },
     onFallbackNeeded() {
@@ -356,7 +367,7 @@ function SenderApp() {
       setScreen(SCREEN_ACTIVE);
       setStatusMessage('Connecting to device…');
       setPeerConnected(false);
-      setTransportReady(false);
+      setTransportMode(TRANSPORT_WAITING);
       setTransferStarted(false);
     } catch (error) {
       setStatusMessage(error?.message || 'Unable to create session.');
@@ -598,7 +609,7 @@ function SenderApp() {
                     <div className="eyebrow">Live session</div>
                   </div>
                   <div className={`status-pill ${peerConnected ? 'live' : 'waiting'}`}>
-                    {transportReady ? 'Connected' : peerConnected ? 'Peer detected' : 'Waiting for peer'}
+                    {getTransportLabel(transportMode, peerConnected)}
                   </div>
                 </div>
 
@@ -812,7 +823,7 @@ function ReceiverSession() {
   const [statusMessage, setStatusMessage] = useState('');
   const [statusDanger, setStatusDanger] = useState(false);
   const [joined, setJoined] = useState(false);
-  const [transportReady, setTransportReady] = useState(false);
+  const [transportMode, setTransportMode] = useState(TRANSPORT_WAITING);
   const [lookupResult, setLookupResult] = useState(location.state?.lookup || null);
   const [receivedFiles, setReceivedFiles] = useState([]);
   const [outgoingFiles, setOutgoingFiles] = useState([]);
@@ -870,23 +881,23 @@ function ReceiverSession() {
     },
     onConnectionStateChange(state) {
       if (state === 'connected') {
-        setTransportReady(true);
+        setTransportMode(TRANSPORT_DIRECT);
         setStatusMessage('');
       } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-        setTransportReady(false);
+        setTransportMode((current) => (current === TRANSPORT_DIRECT ? TRANSPORT_RELAY : current));
       }
     },
     onDataChannel(channel) {
       channel.binaryType = 'arraybuffer';
       channel.onopen = () => {
-        setTransportReady(true);
+        setTransportMode(TRANSPORT_DIRECT);
         setStatusMessage('');
       };
       channel.onmessage = async (event) => {
         await transfer.handleBinaryMessage(event.data);
       };
       channel.onclose = () => {
-        setTransportReady(false);
+        setTransportMode((current) => (current === TRANSPORT_DIRECT ? TRANSPORT_RELAY : current));
       };
     },
     onFallbackNeeded() {
@@ -959,7 +970,7 @@ function ReceiverSession() {
         switch (message.type) {
           case 'joiner-ready':
             setJoined(true);
-            setTransportReady(socket.readyState === WebSocket.OPEN);
+            setTransportMode(TRANSPORT_RELAY);
             setStatusMessage('');
             clipboard.flushDraft().catch(() => {});
             break;
@@ -978,6 +989,7 @@ function ReceiverSession() {
             setIncomingPeekUrl(message.url || '');
             break;
           case 'peer-disconnected':
+            setTransportMode(TRANSPORT_RECONNECTING);
             setStatusMessage('The other device disconnected.');
             break;
           default:
@@ -990,7 +1002,7 @@ function ReceiverSession() {
           fallbackSocketRef.current = null;
         }
         setJoined(false);
-        setTransportReady(false);
+        setTransportMode(TRANSPORT_RECONNECTING);
         if (SESSION_ENDED_CLOSE_CODES.has(event.code)) {
           setStatusMessage('Session ended.');
           setStatusDanger(false);
@@ -1135,7 +1147,7 @@ function ReceiverSession() {
                   <span className="metric-label">Ready to save</span>
                 </div>
                 <div className="metric-cell">
-                  <span className="metric-value">{transportReady ? 'Connected' : 'Relay'}</span>
+                  <span className="metric-value">{getTransportLabel(transportMode, joined)}</span>
                   <span className="metric-label">Session state</span>
                 </div>
               </div>
