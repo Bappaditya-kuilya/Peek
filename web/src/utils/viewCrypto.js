@@ -58,7 +58,7 @@ export async function decryptViewFile(encryptionKey, encryptedBuffer) {
 
 export function createViewUrl(viewId, keyBase64) {
   const origin = window.location.origin.replace(/\/$/, '');
-  return `${origin}/view/${viewId}?k=${encodeURIComponent(keyBase64)}`;
+  return `${origin}/view.html?id=${encodeURIComponent(viewId)}&k=${encodeURIComponent(keyBase64)}`;
 }
 
 export async function uploadEncryptedView({
