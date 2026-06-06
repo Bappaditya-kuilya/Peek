@@ -57,6 +57,11 @@ async function handleJoinMessage(socket, message, role) {
 
   const session = await getSession(message.sessionId);
   if (!session || !(await validateToken(message.sessionId, message.token))) {
+    console.warn('Peek join rejected', {
+      role,
+      sessionId: String(message.sessionId || ''),
+      tokenPresent: Boolean(message.token),
+    });
     socket.close(4001, 'Invalid token');
     return;
   }
@@ -79,6 +84,10 @@ async function handleJoinMessage(socket, message, role) {
   socket.sessionId = message.sessionId;
   socket.role = role;
 
+  console.log('Peek join accepted', {
+    role,
+    sessionId: message.sessionId,
+  });
   sendJson(socket, { type: `${role}-ready`, expiresAt: session.expiresAt });
   notifyPeerConnected(message.sessionId, role);
 }
@@ -148,6 +157,7 @@ async function handleRelayMessage(socket, rawData, isBinary) {
 async function handleWebSocket(socket, req) {
   const origin = req.headers.origin;
   if (!isAllowedOrigin(origin)) {
+    console.warn('Peek WebSocket forbidden origin', { origin });
     socket.close(4003, 'Forbidden origin');
     return;
   }
