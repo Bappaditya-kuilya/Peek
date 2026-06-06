@@ -21,7 +21,9 @@ export function ClipboardBar({
       <textarea
         className="clipboard-textarea"
         disabled={disabled}
+        id="clipboard-draft"
         maxLength={maxChars}
+        name="clipboard_draft"
         onChange={(event) => onChange(event.target.value)}
         placeholder={disabled ? 'Clipboard sync is disabled on this relay.' : 'Type or paste here. It syncs to the connected device automatically.'}
         rows={4}
@@ -33,7 +35,7 @@ export function ClipboardBar({
           <strong>Incoming text:</strong> {receivedText || 'Waiting for the other device…'}
         </div>
         <div className="panel-label">{sendLabel}</div>
-        <button type="button" className="compact-button" disabled={!receivedText} onClick={onCopy}>
+        <button type="button" className="compact-button" disabled={!receivedText} id="clipboard-copy" name="clipboard_copy" onClick={onCopy}>
           {copyLabel}
         </button>
       </div>

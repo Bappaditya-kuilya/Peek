@@ -838,7 +838,7 @@ function ReceiverSession() {
   const [confirmKill, setConfirmKill] = useState(false);
   const [incomingPeekUrl, setIncomingPeekUrl] = useState('');
   const receiverUrl = new URL(window.location.href);
-  const queryToken = receiverUrl.searchParams.get('t') || '';
+  const queryToken = receiverUrl.searchParams.get('t') || receiverUrl.searchParams.get('token') || '';
   const queryKeyBase64 = receiverUrl.searchParams.get('k') || '';
   const fragment = window.location.hash.replace(/^#/, '');
   const [fragmentToken, fragmentKeyBase64] = fragment.split('.');
@@ -950,19 +950,36 @@ function ReceiverSession() {
     if (!fullLinkMode || !key) return undefined;
 
     let active = true;
+    let joinTimeout = null;
 
     function connect() {
       if (!active) {
         return;
       }
 
+      console.log('Receiver parsed join info:', {
+        fullLinkMode,
+        keyPresent: Boolean(keyBase64),
+        sessionId,
+        tokenPresent: Boolean(token),
+      });
+      console.log('Receiver WS URL:', RELAY_WS_URL);
+
       const socket = new WebSocket(RELAY_WS_URL);
       socket.binaryType = 'arraybuffer';
       fallbackSocketRef.current = socket;
 
       socket.onopen = () => {
+        console.log('Receiver WebSocket opened');
+        console.log('Sending joiner-join', { sessionId, token });
         socket.send(JSON.stringify({ type: 'joiner-join', sessionId, token }));
         clipboard.flushDraft().catch(() => {});
+        joinTimeout = window.setTimeout(() => {
+          if (!hasJoinedRef.current) {
+            setStatusMessage('Unable to join session. Check that the full link opened correctly.');
+            setStatusDanger(true);
+          }
+        }, 5000);
       };
 
       socket.onmessage = async (event) => {
@@ -972,6 +989,7 @@ function ReceiverSession() {
         }
 
         const message = JSON.parse(event.data);
+        console.log('Receiver WebSocket message:', message.type, message);
         if (message.expiresAt) {
           setLookupResult((current) => ({ ...(current || {}), expiresAt: message.expiresAt }));
         }
@@ -979,9 +997,13 @@ function ReceiverSession() {
         switch (message.type) {
           case 'joiner-ready':
             hasJoinedRef.current = true;
+            if (joinTimeout) {
+              window.clearTimeout(joinTimeout);
+            }
             setJoined(true);
             setTransportMode(TRANSPORT_RELAY);
             setStatusMessage('');
+            setStatusDanger(false);
             clipboard.flushDraft().catch(() => {});
             break;
           case 'webrtc-offer': {
@@ -1007,7 +1029,17 @@ function ReceiverSession() {
         }
       };
 
+      socket.onerror = (error) => {
+        console.error('Receiver WebSocket error:', error);
+        setStatusMessage('Connection error — check relay URL.');
+        setStatusDanger(true);
+      };
+
       socket.onclose = (event) => {
+        console.log('Receiver WebSocket closed:', event.code, event.reason);
+        if (joinTimeout) {
+          window.clearTimeout(joinTimeout);
+        }
         if (fallbackSocketRef.current === socket) {
           fallbackSocketRef.current = null;
         }
@@ -1040,6 +1072,9 @@ function ReceiverSession() {
 
     return () => {
       active = false;
+      if (joinTimeout) {
+        window.clearTimeout(joinTimeout);
+      }
       if (reconnectTimeoutRef.current) {
         window.clearTimeout(reconnectTimeoutRef.current);
       }

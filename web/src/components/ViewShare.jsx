@@ -25,12 +25,12 @@ export function ViewShare({
 
       <label className="view-field">
         <span className="panel-label">File</span>
-        <input className="view-input" disabled={disabled} onChange={(event) => onFileChange(event.target.files?.[0] || null)} type="file" accept="application/pdf,image/*" />
+        <input className="view-input" disabled={disabled} id="peek-file" name="peek_file" onChange={(event) => onFileChange(event.target.files?.[0] || null)} type="file" accept="application/pdf,image/*" />
       </label>
 
       <label className="view-field">
         <span className="panel-label">Expires in</span>
-        <select className="view-input" disabled={disabled} onChange={(event) => onExpiresChange(Number(event.target.value))} value={expiresIn}>
+        <select className="view-input" disabled={disabled} id="peek-expires-in" name="peek_expires_in" onChange={(event) => onExpiresChange(Number(event.target.value))} value={expiresIn}>
           <option value={5}>5 minutes</option>
           <option value={15}>15 minutes</option>
           <option value={30}>30 minutes</option>
@@ -39,11 +39,11 @@ export function ViewShare({
       </label>
 
       <label className="view-toggle">
-        <input checked={onceOnly} disabled={disabled} onChange={(event) => onToggleOnceOnly(event.target.checked)} type="checkbox" />
+        <input checked={onceOnly} disabled={disabled} id="peek-once-only" name="peek_once_only" onChange={(event) => onToggleOnceOnly(event.target.checked)} type="checkbox" />
         <span>Delete after first successful view</span>
       </label>
 
-      <button className="button-primary" disabled={disabled || !file || isBusy} onClick={onGenerate} type="button">
+      <button className="button-primary" disabled={disabled || !file || isBusy} id="peek-generate" name="peek_generate" onClick={onGenerate} type="button">
         {isBusy ? 'Preparing Peek…' : 'Create Peek link'}
       </button>
 
