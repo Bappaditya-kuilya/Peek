@@ -123,7 +123,9 @@ async function renderImage(blob) {
 async function main() {
   const url = new URL(window.location.href);
   const keyBase64 = url.searchParams.get('k') || '';
-  const viewId = url.pathname.split('/').filter(Boolean).pop();
+  const queryViewId = url.searchParams.get('id') || '';
+  const pathViewId = url.pathname.split('/').filter(Boolean).pop();
+  const viewId = queryViewId || (pathViewId !== 'view' && pathViewId !== 'view.html' ? pathViewId : '');
 
   if (!viewId || !keyBase64) {
     renderStatus('This Peek link is incomplete.', true);

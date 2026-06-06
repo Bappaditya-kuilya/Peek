@@ -8,6 +8,32 @@ import {
 
 const DEBOUNCE_MS = 500;
 
+async function writeTextToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  textarea.style.pointerEvents = 'none';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  try {
+    const copied = document.execCommand('copy');
+    if (!copied) {
+      throw new Error('copy failed');
+    }
+  } finally {
+    document.body.removeChild(textarea);
+  }
+}
+
 export function useClipboard({ encryptionKey, socketRef }) {
   const [draftText, setDraftText] = useState('');
   const [receivedText, setReceivedText] = useState('');
@@ -71,17 +97,23 @@ export function useClipboard({ encryptionKey, socketRef }) {
   }
 
   async function copyReceivedText() {
+    if (!receivedText) {
+      return false;
+    }
+
     try {
-      await navigator.clipboard.writeText(receivedText);
+      await writeTextToClipboard(receivedText);
       setCopyState('copied');
     } catch {
       setCopyState('failed');
+      return false;
     }
 
     if (copyResetRef.current) {
       window.clearTimeout(copyResetRef.current);
     }
     copyResetRef.current = window.setTimeout(() => setCopyState('idle'), 1500);
+    return true;
   }
 
   return {

@@ -4,6 +4,7 @@ export function ClipboardBar({
   maxChars,
   onChange,
   onCopy,
+  sendLabel = 'Synced automatically',
   receivedText,
 }) {
   return (
@@ -29,6 +30,7 @@ export function ClipboardBar({
         <div className="clipboard-received-copy">
           <strong>Incoming text:</strong> {receivedText || 'Waiting for the other device…'}
         </div>
+        <div className="panel-label">{sendLabel}</div>
         <button type="button" className="compact-button" disabled={!receivedText} onClick={onCopy}>
           {copyLabel}
         </button>

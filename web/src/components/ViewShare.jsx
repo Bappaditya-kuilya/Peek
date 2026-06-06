@@ -1,8 +1,10 @@
 export function ViewShare({
+  copyLabel = 'Copy link',
   expiresIn,
   file,
   generatedUrl,
   isBusy = false,
+  onCopy,
   onExpiresChange,
   onFileChange,
   onGenerate,
@@ -45,7 +47,14 @@ export function ViewShare({
       </button>
 
       {file ? <div className="status-copy">Selected: {file.name}</div> : null}
-      {generatedUrl ? <div className="view-link-output">{generatedUrl}</div> : null}
+      {generatedUrl ? (
+        <>
+          <div className="view-link-output">{generatedUrl}</div>
+          <button type="button" className="compact-button" onClick={onCopy}>
+            {copyLabel}
+          </button>
+        </>
+      ) : null}
       {statusMessage ? <div className="status-copy">{statusMessage}</div> : null}
     </div>
   );

@@ -30,6 +30,37 @@ const SESSION_REPLACED_CLOSE_CODE = 4005;
 const RELAY_HTTP_URL = getRelayHttpUrl();
 const RELAY_WS_URL = getRelayWsUrl();
 
+async function copyText(text) {
+  if (!text) {
+    return false;
+  }
+
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return true;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  textarea.style.pointerEvents = 'none';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  try {
+    const copied = document.execCommand('copy');
+    if (!copied) {
+      throw new Error('copy failed');
+    }
+    return true;
+  } finally {
+    document.body.removeChild(textarea);
+  }
+}
+
 function createLocalFileRecord(file, index) {
   return {
     file,
@@ -91,6 +122,7 @@ function SenderApp() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [sessionEndedSummary, setSessionEndedSummary] = useState([]);
   const [peerConnected, setPeerConnected] = useState(false);
+  const [transportReady, setTransportReady] = useState(false);
   const [transferStarted, setTransferStarted] = useState(false);
   const [peekFile, setPeekFile] = useState(null);
   const [peekExpiresIn, setPeekExpiresIn] = useState(15);
@@ -98,6 +130,7 @@ function SenderApp() {
   const [peekUrl, setPeekUrl] = useState('');
   const [peekBusy, setPeekBusy] = useState(false);
   const [peekStatus, setPeekStatus] = useState('');
+  const [peekCopyState, setPeekCopyState] = useState('idle');
   const [incomingPeekUrl, setIncomingPeekUrl] = useState('');
   const { createSession, killSession, session } = useSession();
   const clipboard = useClipboard({
@@ -153,12 +186,17 @@ function SenderApp() {
     },
     onConnectionStateChange(state) {
       if (state === 'connected') {
+        setTransportReady(true);
         setStatusMessage('');
+      } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+        setTransportReady(false);
       }
     },
     onDataChannel(channel) {
       channel.binaryType = 'arraybuffer';
       channel.onopen = async () => {
+        setTransportReady(true);
+        setStatusMessage('');
         if (!transferStarted && selectedFiles.length) {
           setTransferStarted(true);
           await transfer.sendFiles(
@@ -169,6 +207,9 @@ function SenderApp() {
       };
       channel.onmessage = async (event) => {
         await transfer.handleBinaryMessage(event.data);
+      };
+      channel.onclose = () => {
+        setTransportReady(false);
       };
     },
     onFallbackNeeded() {
@@ -315,6 +356,7 @@ function SenderApp() {
       setScreen(SCREEN_ACTIVE);
       setStatusMessage('Connecting to device…');
       setPeerConnected(false);
+      setTransportReady(false);
       setTransferStarted(false);
     } catch (error) {
       setStatusMessage(error?.message || 'Unable to create session.');
@@ -379,7 +421,8 @@ function SenderApp() {
         mimeType: encrypted.mimeType,
         onceOnly: peekOnceOnly,
       });
-      setPeekUrl(createViewUrl(view.id, encrypted.keyBase64));
+      const url = createViewUrl(view.id, encrypted.keyBase64);
+      setPeekUrl(url);
       setPeekStatus('Peek link ready.');
     } catch (error) {
       setPeekStatus(error?.message || 'Unable to create Peek link.');
@@ -418,6 +461,21 @@ function SenderApp() {
     } finally {
       setPeekBusy(false);
     }
+  }
+
+  async function handleCopyPeekLink() {
+    if (!peekUrl) {
+      return;
+    }
+
+    try {
+      await copyText(peekUrl);
+      setPeekCopyState('copied');
+    } catch {
+      setPeekCopyState('failed');
+    }
+
+    window.setTimeout(() => setPeekCopyState('idle'), 1500);
   }
 
   return (
@@ -540,7 +598,7 @@ function SenderApp() {
                     <div className="eyebrow">Live session</div>
                   </div>
                   <div className={`status-pill ${peerConnected ? 'live' : 'waiting'}`}>
-                    {peerConnected ? 'Peer connected' : 'Waiting for peer'}
+                    {transportReady ? 'Connected' : peerConnected ? 'Peer detected' : 'Waiting for peer'}
                   </div>
                 </div>
 
@@ -609,6 +667,7 @@ function SenderApp() {
                   maxChars={clipboard.maxChars}
                   onChange={clipboard.setDraftText}
                   onCopy={clipboard.copyReceivedText}
+                  sendLabel={peerConnected ? 'Sync available' : 'Will sync after connection'}
                   receivedText={clipboard.receivedText}
                 />
               </div>
@@ -621,6 +680,8 @@ function SenderApp() {
                 file={peekFile}
                 generatedUrl={peekUrl}
                 isBusy={peekBusy}
+                copyLabel={peekCopyState === 'copied' ? 'Copied' : peekCopyState === 'failed' ? 'Retry copy' : 'Copy link'}
+                onCopy={handleCopyPeekLink}
                 onExpiresChange={setPeekExpiresIn}
                 onFileChange={setPeekFile}
                 onGenerate={handleCreatePeekLink}
@@ -751,6 +812,7 @@ function ReceiverSession() {
   const [statusMessage, setStatusMessage] = useState('');
   const [statusDanger, setStatusDanger] = useState(false);
   const [joined, setJoined] = useState(false);
+  const [transportReady, setTransportReady] = useState(false);
   const [lookupResult, setLookupResult] = useState(location.state?.lookup || null);
   const [receivedFiles, setReceivedFiles] = useState([]);
   const [outgoingFiles, setOutgoingFiles] = useState([]);
@@ -808,13 +870,23 @@ function ReceiverSession() {
     },
     onConnectionStateChange(state) {
       if (state === 'connected') {
+        setTransportReady(true);
         setStatusMessage('');
+      } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+        setTransportReady(false);
       }
     },
     onDataChannel(channel) {
       channel.binaryType = 'arraybuffer';
+      channel.onopen = () => {
+        setTransportReady(true);
+        setStatusMessage('');
+      };
       channel.onmessage = async (event) => {
         await transfer.handleBinaryMessage(event.data);
+      };
+      channel.onclose = () => {
+        setTransportReady(false);
       };
     },
     onFallbackNeeded() {
@@ -887,6 +959,7 @@ function ReceiverSession() {
         switch (message.type) {
           case 'joiner-ready':
             setJoined(true);
+            setTransportReady(socket.readyState === WebSocket.OPEN);
             setStatusMessage('');
             clipboard.flushDraft().catch(() => {});
             break;
@@ -917,6 +990,7 @@ function ReceiverSession() {
           fallbackSocketRef.current = null;
         }
         setJoined(false);
+        setTransportReady(false);
         if (SESSION_ENDED_CLOSE_CODES.has(event.code)) {
           setStatusMessage('Session ended.');
           setStatusDanger(false);
@@ -1061,7 +1135,7 @@ function ReceiverSession() {
                   <span className="metric-label">Ready to save</span>
                 </div>
                 <div className="metric-cell">
-                  <span className="metric-value">Live</span>
+                  <span className="metric-value">{transportReady ? 'Connected' : 'Relay'}</span>
                   <span className="metric-label">Session state</span>
                 </div>
               </div>
@@ -1119,6 +1193,7 @@ function ReceiverSession() {
               maxChars={clipboard.maxChars}
               onChange={clipboard.setDraftText}
               onCopy={clipboard.copyReceivedText}
+              sendLabel={joined ? 'Sync available' : 'Will sync after connection'}
               receivedText={clipboard.receivedText}
             />
             {incomingPeekUrl ? (
