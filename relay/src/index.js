@@ -32,7 +32,39 @@ const {
 const app = express();
 const TEN_MB = 10 * 1024 * 1024;
 const MAX_FILENAME_LENGTH = 180;
-const ALLOWED_VIEW_MIME_TYPES = new Set(['application/pdf']);
+const ALLOWED_VIEW_MIME_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/svg+xml',
+]);
+
+function inferMimeTypeFromFilename(filename = '') {
+  const normalizedName = String(filename).trim().toLowerCase();
+  if (normalizedName.endsWith('.pdf')) return 'application/pdf';
+  if (normalizedName.endsWith('.jpg') || normalizedName.endsWith('.jpeg')) return 'image/jpeg';
+  if (normalizedName.endsWith('.png')) return 'image/png';
+  if (normalizedName.endsWith('.gif')) return 'image/gif';
+  if (normalizedName.endsWith('.webp')) return 'image/webp';
+  if (normalizedName.endsWith('.svg')) return 'image/svg+xml';
+  return '';
+}
+
+function normalizeViewMimeType(mimeType = '', filename = '') {
+  const normalizedMimeType = String(mimeType).trim().toLowerCase();
+  if (normalizedMimeType === 'image/jpg') {
+    return 'image/jpeg';
+  }
+
+  if (ALLOWED_VIEW_MIME_TYPES.has(normalizedMimeType)) {
+    return normalizedMimeType;
+  }
+
+  return inferMimeTypeFromFilename(filename);
+}
 
 app.set('trust proxy', trustProxy);
 app.use(express.json({ limit: '256kb' }));
@@ -129,7 +161,7 @@ app.post(
   async (req, res) => {
     const encryptedBlob = Buffer.from(req.body || []);
     const filename = String(req.headers['x-filename'] || '').trim().replace(/[^\x20-\x7E]+/g, '').slice(0, MAX_FILENAME_LENGTH);
-    const mimeType = String(req.headers['x-mime-type'] || '').trim().toLowerCase();
+    const mimeType = normalizeViewMimeType(req.headers['x-mime-type'] || '', filename);
     const expiresInRaw = Number(req.headers['x-expires-in']);
     const onceOnly = String(req.headers['x-once-only'] || '').toLowerCase() === 'true';
 
@@ -138,8 +170,7 @@ app.post(
       return;
     }
 
-    const mimeAllowed = ALLOWED_VIEW_MIME_TYPES.has(mimeType) || mimeType.startsWith('image/');
-    if (!mimeAllowed) {
+    if (!ALLOWED_VIEW_MIME_TYPES.has(mimeType)) {
       res.status(400).json({ error: 'Unsupported Peek file type' });
       return;
     }
