@@ -11,6 +11,39 @@ const RELAY_HTTP_URL = isLocalHost
   ? `${window.location.protocol === 'https:' ? 'https:' : 'http:'}//${window.location.hostname}:${LOCAL_RELAY_PORT}`
   : PRODUCTION_RELAY_HTTP_URL;
 const IV_LENGTH = 12;
+const SUPPORTED_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/svg+xml',
+]);
+
+function inferMimeTypeFromFilename(filename = '') {
+  const normalizedName = String(filename).trim().toLowerCase();
+  if (normalizedName.endsWith('.pdf')) return 'application/pdf';
+  if (normalizedName.endsWith('.jpg') || normalizedName.endsWith('.jpeg')) return 'image/jpeg';
+  if (normalizedName.endsWith('.png')) return 'image/png';
+  if (normalizedName.endsWith('.gif')) return 'image/gif';
+  if (normalizedName.endsWith('.webp')) return 'image/webp';
+  if (normalizedName.endsWith('.svg')) return 'image/svg+xml';
+  return 'application/octet-stream';
+}
+
+function normalizeMimeType(mimeType = '', filename = '') {
+  const normalizedMimeType = String(mimeType).trim().toLowerCase();
+  if (normalizedMimeType === 'image/jpg') {
+    return 'image/jpeg';
+  }
+
+  if (SUPPORTED_TYPES.has(normalizedMimeType)) {
+    return normalizedMimeType;
+  }
+
+  return inferMimeTypeFromFilename(filename);
+}
 
 const app = document.getElementById('app');
 
@@ -156,8 +189,11 @@ async function main() {
   }
 
   const expiresAt = Number(response.headers.get('X-Expires-At')) || Date.now();
-  const mimeType = response.headers.get('X-Mime-Type') || 'application/octet-stream';
   const filename = response.headers.get('X-Filename') || 'Peek file';
+  const mimeType = normalizeMimeType(
+    response.headers.get('X-Mime-Type') || 'application/octet-stream',
+    filename
+  );
 
   let decrypted;
   try {
@@ -192,7 +228,7 @@ async function main() {
   try {
     if (mimeType === 'application/pdf') {
       viewerNode.appendChild(await renderPdf(blob));
-    } else if (mimeType.startsWith('image/')) {
+    } else if (SUPPORTED_TYPES.has(mimeType) && mimeType.startsWith('image/')) {
       viewerNode.appendChild(await renderImage(blob));
     } else {
       renderStatus('This Peek file type is not supported.', true);

@@ -6,6 +6,39 @@ import {
 
 const IV_LENGTH = 12;
 const TEN_MB = 10 * 1024 * 1024;
+const SUPPORTED_PEEK_MIME_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/svg+xml',
+]);
+
+function inferMimeTypeFromFilename(filename = '') {
+  const normalizedName = String(filename).trim().toLowerCase();
+  if (normalizedName.endsWith('.pdf')) return 'application/pdf';
+  if (normalizedName.endsWith('.jpg') || normalizedName.endsWith('.jpeg')) return 'image/jpeg';
+  if (normalizedName.endsWith('.png')) return 'image/png';
+  if (normalizedName.endsWith('.gif')) return 'image/gif';
+  if (normalizedName.endsWith('.webp')) return 'image/webp';
+  if (normalizedName.endsWith('.svg')) return 'image/svg+xml';
+  return '';
+}
+
+function normalizePeekMimeType(file) {
+  const mimeType = String(file?.type || '').trim().toLowerCase();
+  if (mimeType === 'image/jpg') {
+    return 'image/jpeg';
+  }
+
+  if (SUPPORTED_PEEK_MIME_TYPES.has(mimeType)) {
+    return mimeType;
+  }
+
+  return inferMimeTypeFromFilename(file?.name);
+}
 
 function ensurePeekFile(file) {
   if (!(file instanceof File)) {
@@ -16,18 +49,16 @@ function ensurePeekFile(file) {
     throw new Error('Peek supports files up to 10MB');
   }
 
-  const mimeType = file.type || '';
-  const supported =
-    mimeType === 'application/pdf' ||
-    mimeType.startsWith('image/');
-
-  if (!supported) {
+  const mimeType = normalizePeekMimeType(file);
+  if (!SUPPORTED_PEEK_MIME_TYPES.has(mimeType)) {
     throw new Error('Peek supports only PDF and image files');
   }
+
+  return mimeType;
 }
 
 export async function encryptViewFile(file) {
-  ensurePeekFile(file);
+  const mimeType = ensurePeekFile(file);
 
   const key = await generateEncryptionKey();
   const keyBase64 = await exportKeyToBase64(key);
@@ -43,7 +74,7 @@ export async function encryptViewFile(file) {
     encryptedBlob: encryptedBytes.buffer,
     key,
     keyBase64,
-    mimeType: file.type || 'application/octet-stream',
+    mimeType,
     filename: file.name,
     size: file.size,
   };
