@@ -1,8 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createQrDataUrl } from '../utils/qr.js';
 import { formatTimer, timerLabel } from '../utils/format.js';
+import { getReceiverBaseUrl } from '../utils/relayConfig.js';
+
+function getCodeLookupHost() {
+  try {
+    return new URL(getReceiverBaseUrl()).host;
+  } catch {
+    return window.location.host;
+  }
+}
 
 export function QRDisplay({ expiresAt, joinUrl, numericCode }) {
+  const lookupHost = getCodeLookupHost();
   const [qrUrl, setQrUrl] = useState('');
   const [timeLabel, setTimeLabel] = useState(formatTimer(expiresAt));
   const [ariaLabel, setAriaLabel] = useState(timerLabel(expiresAt));
@@ -46,7 +56,7 @@ export function QRDisplay({ expiresAt, joinUrl, numericCode }) {
         {timeLabel}
       </div>
       <div className="qr-copy">
-        No camera? Type <span className="code">{numericCode}</span> at peekapp.vercel.app/r
+        No camera? Type <span className="code">{numericCode}</span> at {lookupHost}/r
       </div>
       <div className="notice-banner warning">Keep this screen open until the transfer completes.</div>
     </div>

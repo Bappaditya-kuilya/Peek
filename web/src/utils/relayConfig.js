@@ -1,5 +1,10 @@
-const PRODUCTION_HTTP_URL = 'https://passr-relay-production.up.railway.app';
-const PRODUCTION_WS_URL = 'wss://passr-relay-production.up.railway.app';
+// Production relay defaults. These are only a fallback: the deployed web build
+// should set VITE_RELAY_HTTP_URL / VITE_RELAY_WS_URL to its own relay host
+// (e.g. in Vercel project env). The defaults below match the relay host the
+// docs, fly.toml, and self-hosting guide all reference, so a build with no env
+// at least points at a real, intended host instead of a dead one.
+const PRODUCTION_HTTP_URL = 'https://peek-relay.fly.dev';
+const PRODUCTION_WS_URL = 'wss://peek-relay.fly.dev';
 
 function isLocalHost(hostname = window.location.hostname) {
   return (
@@ -50,9 +55,9 @@ export function getReceiverBaseUrl() {
     return import.meta.env.VITE_RECEIVER_BASE_URL.replace(/\/$/, '');
   }
 
-  if (isLocalHost() && window.location.port === '5173') {
-    return 'http://localhost:5174/r';
-  }
-
+  // The join/receiver route (/r/:sessionId) is served by this same single-page
+  // app, so the receiver always lives on the current origin. The previous
+  // localhost:5174 special case assumed a second dev server that the documented
+  // `npm run dev` flow never starts, which left the QR/join link dead locally.
   return `${window.location.origin}/r`;
 }
