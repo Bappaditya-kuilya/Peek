@@ -5,39 +5,29 @@ import {
 } from '../hooks/useCrypto.js';
 
 const IV_LENGTH = 12;
-const TEN_MB = 10 * 1024 * 1024;
-const SUPPORTED_PEEK_MIME_TYPES = new Set([
+const FIFTY_MB = 50 * 1024 * 1024;
+// Types the in-browser viewer can render inline. Anything else is still shared
+// end-to-end encrypted, but the receiver gets a Download button instead of a
+// preview. SVG is intentionally excluded — it can carry script.
+const PREVIEWABLE_MIME_TYPES = new Set([
   'application/pdf',
   'image/jpeg',
-  'image/jpg',
   'image/png',
   'image/gif',
   'image/webp',
-  'image/svg+xml',
 ]);
-
-function inferMimeTypeFromFilename(filename = '') {
-  const normalizedName = String(filename).trim().toLowerCase();
-  if (normalizedName.endsWith('.pdf')) return 'application/pdf';
-  if (normalizedName.endsWith('.jpg') || normalizedName.endsWith('.jpeg')) return 'image/jpeg';
-  if (normalizedName.endsWith('.png')) return 'image/png';
-  if (normalizedName.endsWith('.gif')) return 'image/gif';
-  if (normalizedName.endsWith('.webp')) return 'image/webp';
-  if (normalizedName.endsWith('.svg')) return 'image/svg+xml';
-  return '';
-}
 
 function normalizePeekMimeType(file) {
   const mimeType = String(file?.type || '').trim().toLowerCase();
   if (mimeType === 'image/jpg') {
     return 'image/jpeg';
   }
-
-  if (SUPPORTED_PEEK_MIME_TYPES.has(mimeType)) {
+  if (PREVIEWABLE_MIME_TYPES.has(mimeType)) {
     return mimeType;
   }
-
-  return inferMimeTypeFromFilename(file?.name);
+  // Unknown / non-previewable: hand it through as a generic binary. The browser
+  // value (e.g. application/zip) is dropped to keep the header predictable.
+  return 'application/octet-stream';
 }
 
 function ensurePeekFile(file) {
@@ -45,16 +35,11 @@ function ensurePeekFile(file) {
     throw new Error('Invalid file');
   }
 
-  if (file.size > TEN_MB) {
-    throw new Error('Peek supports files up to 10MB');
+  if (file.size > FIFTY_MB) {
+    throw new Error('Peek supports files up to 50MB');
   }
 
-  const mimeType = normalizePeekMimeType(file);
-  if (!SUPPORTED_PEEK_MIME_TYPES.has(mimeType)) {
-    throw new Error('Peek supports only PDF and image files');
-  }
-
-  return mimeType;
+  return normalizePeekMimeType(file);
 }
 
 export async function encryptViewFile(file) {
@@ -89,7 +74,10 @@ export async function decryptViewFile(encryptionKey, encryptedBuffer) {
 
 export function createViewUrl(viewId, keyBase64) {
   const origin = window.location.origin.replace(/\/$/, '');
-  return `${origin}/view.html?id=${encodeURIComponent(viewId)}&k=${encodeURIComponent(keyBase64)}`;
+  // The key lives in the URL fragment (#…), which browsers never transmit to
+  // the server. Keeping it out of the query string prevents the static host,
+  // CDNs, and proxy logs from ever seeing the decryption key.
+  return `${origin}/view.html?id=${encodeURIComponent(viewId)}#k=${encodeURIComponent(keyBase64)}`;
 }
 
 export async function uploadEncryptedView({

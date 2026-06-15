@@ -1,13 +1,32 @@
 const crypto = require('crypto');
 
 const MAX_VIEWS = 500;
+// Hard ceiling on the total bytes held across all live views. The relay keeps
+// every encrypted blob in memory, so without this an attacker could upload many
+// large Peeks and exhaust the host's RAM (a trivial DoS on a 512MB free tier).
+// 300MB leaves headroom for Node, sockets, and request buffers.
+const MAX_TOTAL_VIEW_BYTES = 300 * 1024 * 1024;
 
 function createInMemoryViewStore() {
   const views = new Map();
+  let totalBytes = 0;
+
+  function dropView(id) {
+    const existing = views.get(id);
+    if (!existing) {
+      return false;
+    }
+    totalBytes -= existing.encryptedBlob.length;
+    return views.delete(id);
+  }
 
   function createView({ encryptedBlob, filename, mimeType, expiresIn, onceOnly }) {
-    if (views.size >= MAX_VIEWS) {
-      views.delete(views.keys().next().value);
+    const blobSize = encryptedBlob.length;
+
+    // Reject rather than evict: silently dropping someone else's live Peek to
+    // make room would let one uploader knock out everyone else's links.
+    if (views.size >= MAX_VIEWS || totalBytes + blobSize > MAX_TOTAL_VIEW_BYTES) {
+      return null;
     }
 
     const id = crypto.randomBytes(12).toString('hex');
@@ -24,6 +43,7 @@ function createInMemoryViewStore() {
       onceOnly,
       viewCount: 0,
     });
+    totalBytes += blobSize;
 
     return { id, uploadToken, expiresAt };
   }
@@ -35,7 +55,7 @@ function createInMemoryViewStore() {
     }
 
     if (view.expiresAt <= Date.now()) {
-      views.delete(id);
+      dropView(id);
       return null;
     }
 
@@ -43,7 +63,7 @@ function createInMemoryViewStore() {
   }
 
   function deleteView(id) {
-    return views.delete(id);
+    return dropView(id);
   }
 
   function validateUploadToken(id, token) {
@@ -74,7 +94,7 @@ function createInMemoryViewStore() {
     const now = Date.now();
     for (const [id, view] of views.entries()) {
       if (view.expiresAt <= now) {
-        views.delete(id);
+        dropView(id);
       }
     }
   }
@@ -84,6 +104,7 @@ function createInMemoryViewStore() {
 
   return {
     MAX_VIEWS,
+    MAX_TOTAL_VIEW_BYTES,
     createView,
     deleteView,
     getView,
@@ -94,5 +115,6 @@ function createInMemoryViewStore() {
 
 module.exports = {
   MAX_VIEWS,
+  MAX_TOTAL_VIEW_BYTES,
   createInMemoryViewStore,
 };

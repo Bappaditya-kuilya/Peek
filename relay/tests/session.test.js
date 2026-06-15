@@ -12,11 +12,10 @@ test('createSession returns bounded metadata and valid token', async () => {
   await session.killSession(created.id);
 });
 
-test('lookupSessionByCode ignores expired sessions and finds active ones', async () => {
+test('lookupSessionByCode no longer resolves sessions', async () => {
   const created = await session.createSession(2);
-  const lookedUp = await session.lookupSessionByCode(created.numericCode);
-  assert.equal(lookedUp.sessionId, created.id);
-  assert.equal(lookedUp.filesAvailable, 2);
+  assert.equal(created.numericCode, undefined);
+  assert.equal(await session.lookupSessionByCode('000000'), null);
   await session.killSession(created.id);
 });
 

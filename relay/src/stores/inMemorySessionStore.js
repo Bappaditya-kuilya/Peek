@@ -13,12 +13,6 @@ function createInMemorySessionStore() {
     return crypto.randomBytes(8).toString('hex');
   }
 
-  function deriveNumericCode(sessionId) {
-    const hex = sessionId.slice(0, 6);
-    const num = parseInt(hex, 16) % 1000000;
-    return String(num).padStart(6, '0');
-  }
-
   function createSession(fileCount = 0) {
     const id = generateSessionId();
     const token = generateToken();
@@ -26,7 +20,6 @@ function createInMemorySessionStore() {
     const session = {
       id,
       token,
-      numericCode: deriveNumericCode(id),
       createdAt: now,
       expiresAt: now + SESSION_TTL_MS,
       initiatorJoinedAt: null,
@@ -94,20 +87,9 @@ function createInMemorySessionStore() {
     return crypto.timingSafeEqual(expected, actual);
   }
 
-  function lookupSessionByCode(code) {
-    const now = Date.now();
-    for (const session of sessions.values()) {
-      if (session.expiresAt < now) {
-        continue;
-      }
-      if (session.numericCode === code) {
-        return {
-          sessionId: session.id,
-          expiresAt: session.expiresAt,
-          filesAvailable: session.fileCount,
-        };
-      }
-    }
+  function lookupSessionByCode() {
+    // Numeric-code lookup has been removed. Sessions are reachable only via the
+    // full link carrying the secret token + key, so there is no enumerable code.
     return null;
   }
 

@@ -141,6 +141,29 @@
         color: var(--danger);
       }
 
+      .download-block {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        align-items: flex-start;
+        padding: 24px;
+      }
+
+      .download-button {
+        display: inline-block;
+        padding: 14px 22px;
+        background: var(--text);
+        color: #ffffff;
+        font-weight: 600;
+        font-size: 15px;
+        text-decoration: none;
+        border: 1px solid var(--text);
+      }
+
+      .download-button:hover {
+        background: #000000;
+      }
+
       #watermark {
         position: fixed;
         inset: 0;
@@ -171,7 +194,7 @@
   </head>
   <body>
     <div id="app"></div>
-    <div id="watermark">PEEK ONLY • VIEW ONLY • NO DOWNLOAD • PEEK ONLY • VIEW ONLY • NO DOWNLOAD</div>
+    <div id="watermark">PEEK • TEMPORARY SHARE • EXPIRES SOON • PEEK • TEMPORARY SHARE • EXPIRES SOON</div>
     <script type="module" src="/view.js"></script>
   </body>
   </html>

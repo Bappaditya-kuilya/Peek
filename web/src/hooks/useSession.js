@@ -64,7 +64,11 @@ export function useSession() {
 
     const payload = await response.json();
     const receiverBaseUrl = getReceiverBaseUrl();
-    const joinUrl = `${receiverBaseUrl}/${payload.sessionId}?t=${encodeURIComponent(payload.token)}&k=${encodeURIComponent(keyBase64)}`;
+    // Token and key live in the URL fragment (#token.key) so the static host and
+    // any proxy/CDN logs never receive the session secret or decryption key —
+    // fragments are never sent to the server. The receiver reads them from
+    // location.hash.
+    const joinUrl = `${receiverBaseUrl}/${payload.sessionId}#${encodeURIComponent(payload.token)}.${encodeURIComponent(keyBase64)}`;
 
     const nextSession = {
       ...payload,

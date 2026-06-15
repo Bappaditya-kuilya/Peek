@@ -6,7 +6,6 @@ const {
   getSession,
   createSession,
   killSession,
-  lookupSessionByCode,
   validateToken,
 } = require('./session');
 const {
@@ -22,7 +21,6 @@ const {
   isAllowedOrigin,
   requireAllowedOrigin,
   sessionCreateLimiter,
-  sessionLookupLimiter,
   trustProxy,
   viewDeleteLimiter,
   viewFetchLimiter,
@@ -30,40 +28,32 @@ const {
 } = require('./security');
 
 const app = express();
-const TEN_MB = 10 * 1024 * 1024;
+const MAX_VIEW_BYTES = 50 * 1024 * 1024;
 const MAX_FILENAME_LENGTH = 180;
-const ALLOWED_VIEW_MIME_TYPES = new Set([
+
+// A small allowlist of MIME types we are willing to echo back verbatim in the
+// Content-Type-ish X-Mime-Type header. Anything outside this set is collapsed to
+// application/octet-stream so the relay can never be coaxed into advertising an
+// active content type (e.g. text/html) for an attacker-supplied blob. The blob
+// is always served as application/octet-stream regardless; this header is only a
+// hint the client uses to pick a preview vs. a plain download.
+const PREVIEWABLE_MIME_TYPES = new Set([
   'application/pdf',
   'image/jpeg',
-  'image/jpg',
   'image/png',
   'image/gif',
   'image/webp',
-  'image/svg+xml',
 ]);
 
-function inferMimeTypeFromFilename(filename = '') {
-  const normalizedName = String(filename).trim().toLowerCase();
-  if (normalizedName.endsWith('.pdf')) return 'application/pdf';
-  if (normalizedName.endsWith('.jpg') || normalizedName.endsWith('.jpeg')) return 'image/jpeg';
-  if (normalizedName.endsWith('.png')) return 'image/png';
-  if (normalizedName.endsWith('.gif')) return 'image/gif';
-  if (normalizedName.endsWith('.webp')) return 'image/webp';
-  if (normalizedName.endsWith('.svg')) return 'image/svg+xml';
-  return '';
-}
-
-function normalizeViewMimeType(mimeType = '', filename = '') {
+function normalizeViewMimeType(mimeType = '') {
   const normalizedMimeType = String(mimeType).trim().toLowerCase();
   if (normalizedMimeType === 'image/jpg') {
     return 'image/jpeg';
   }
-
-  if (ALLOWED_VIEW_MIME_TYPES.has(normalizedMimeType)) {
+  if (PREVIEWABLE_MIME_TYPES.has(normalizedMimeType)) {
     return normalizedMimeType;
   }
-
-  return inferMimeTypeFromFilename(filename);
+  return 'application/octet-stream';
 }
 
 app.set('trust proxy', trustProxy);
@@ -91,6 +81,10 @@ app.use((req, res, next) => {
   res.header(
     'Access-Control-Allow-Headers',
     'Content-Type, X-Expires-In, X-Filename, X-Mime-Type, X-Once-Only'
+  );
+  res.header(
+    'Access-Control-Expose-Headers',
+    'X-Filename, X-Mime-Type, X-Expires-At, X-Once-Only'
   );
   res.header('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
   if (req.method === 'OPTIONS') {
@@ -122,22 +116,6 @@ app.post('/session', requireAllowedOrigin, sessionCreateLimiter, async (req, res
   });
 });
 
-app.post('/session/lookup', requireAllowedOrigin, sessionLookupLimiter, async (req, res) => {
-  const code = String(req.body?.code || '').trim();
-  if (!/^\d{6}$/.test(code)) {
-    res.status(400).json({ error: 'Invalid code' });
-    return;
-  }
-
-  const result = await lookupSessionByCode(code);
-  if (!result) {
-    res.status(404).json({ error: 'Session not found' });
-    return;
-  }
-
-  res.json(result);
-});
-
 app.delete('/session/:id', requireAllowedOrigin, async (req, res) => {
   if (!/^[a-f0-9]{16}$/i.test(req.params.id)) {
     res.status(400).json({ ok: false, error: 'Invalid session id' });
@@ -157,21 +135,16 @@ app.post(
   '/view',
   requireAllowedOrigin,
   viewUploadLimiter,
-  express.raw({ type: 'application/octet-stream', limit: '10mb' }),
+  express.raw({ type: 'application/octet-stream', limit: '50mb' }),
   async (req, res) => {
     const encryptedBlob = Buffer.from(req.body || []);
     const filename = String(req.headers['x-filename'] || '').trim().replace(/[^\x20-\x7E]+/g, '').slice(0, MAX_FILENAME_LENGTH);
-    const mimeType = normalizeViewMimeType(req.headers['x-mime-type'] || '', filename);
+    const mimeType = normalizeViewMimeType(req.headers['x-mime-type'] || '');
     const expiresInRaw = Number(req.headers['x-expires-in']);
     const onceOnly = String(req.headers['x-once-only'] || '').toLowerCase() === 'true';
 
-    if (!filename || !mimeType || !Number.isFinite(expiresInRaw)) {
+    if (!filename || !Number.isFinite(expiresInRaw)) {
       res.status(400).json({ error: 'Missing required view metadata' });
-      return;
-    }
-
-    if (!ALLOWED_VIEW_MIME_TYPES.has(mimeType)) {
-      res.status(400).json({ error: 'Unsupported Peek file type' });
       return;
     }
 
@@ -181,7 +154,7 @@ app.post(
       return;
     }
 
-    if (!encryptedBlob.length || encryptedBlob.length > TEN_MB) {
+    if (!encryptedBlob.length || encryptedBlob.length > MAX_VIEW_BYTES) {
       res.status(413).json({ error: 'Encrypted Peek payload too large' });
       return;
     }
@@ -193,6 +166,11 @@ app.post(
       mimeType,
       onceOnly,
     });
+
+    if (!view) {
+      res.status(507).json({ error: 'Relay storage is full. Try again shortly.' });
+      return;
+    }
 
     res.status(201).json(view);
   }

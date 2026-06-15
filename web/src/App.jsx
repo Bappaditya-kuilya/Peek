@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Routes, Route, Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Routes, Route, useParams } from 'react-router-dom';
 import { ActivityFeed } from './components/ActivityFeed.jsx';
 import { ClipboardBar } from './components/ClipboardBar.jsx';
 import { FilePicker } from './components/FilePicker.jsx';
 import { FileRow } from './components/FileRow.jsx';
 import { KillSwitch } from './components/KillSwitch.jsx';
-import { NumericCodeInput } from './components/NumericCodeInput.jsx';
 import { QRDisplay } from './components/QRDisplay.jsx';
 import { ReceivePanel } from './components/ReceivePanel.jsx';
 import { ViewShare } from './components/ViewShare.jsx';
@@ -18,7 +17,7 @@ import { safeBaseName } from './utils/sanitize.js';
 import { createViewUrl, encryptViewFile, uploadEncryptedView } from './utils/viewCrypto.js';
 import { downloadAllAsZip } from './utils/zip.js';
 import { importKeyFromBase64 } from './hooks/useCrypto.js';
-import { getRelayHttpUrl, getRelayWsUrl } from './utils/relayConfig.js';
+import { getRelayWsUrl } from './utils/relayConfig.js';
 
 const SCREEN_HOME = 'home';
 const SCREEN_PICKER = 'picker';
@@ -31,7 +30,6 @@ const TRANSPORT_DIRECT = 'direct';
 const TRANSPORT_RELAY = 'relay';
 const TRANSPORT_RECONNECTING = 'reconnecting';
 
-const RELAY_HTTP_URL = getRelayHttpUrl();
 const RELAY_WS_URL = getRelayWsUrl();
 
 async function copyText(text) {
@@ -529,9 +527,6 @@ function SenderApp() {
                     <div className="wordmark">Peek</div>
                     <div className="eyebrow">Shared Device Transfer</div>
                   </div>
-                  <Link className="link-chip" to="/r">
-                    Have a code?
-                  </Link>
                 </div>
 
                 <div className="stack-md">
@@ -711,7 +706,7 @@ function SenderApp() {
             </div>
 
             <aside className="workspace-side">
-              <QRDisplay expiresAt={session.expiresAt} joinUrl={session.joinUrl} numericCode={session.numericCode} />
+              <QRDisplay expiresAt={session.expiresAt} joinUrl={session.joinUrl} />
               <ViewShare
                 expiresIn={peekExpiresIn}
                 file={peekFile}
@@ -789,59 +784,7 @@ function SenderApp() {
   );
 }
 
-function ReceiverLookup() {
-  const navigate = useNavigate();
-
-  async function handleLookup(code) {
-    const response = await fetch(`${RELAY_HTTP_URL}/session/lookup`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code }),
-    });
-
-    if (!response.ok) {
-      throw new Error('lookup failed');
-    }
-
-    const payload = await response.json();
-    navigate(`/r/${payload.sessionId}`, { state: { lookup: payload } });
-  }
-
-  return (
-    <div className="app-shell">
-      <div className="app-frame">
-        <div className="workspace">
-          <div className="workspace-main">
-            <div className="workspace-shell stack-lg">
-              <div className="brand-block">
-                <div className="wordmark">Peek</div>
-                <div className="eyebrow">Join by code</div>
-              </div>
-              <div className="stack-md">
-                <h1 className="section-title">Enter your 6-digit code</h1>
-                <div className="section-subtitle">Use this only when you cannot open the full QR link on the receiving device.</div>
-                <NumericCodeInput autoFocus onComplete={handleLookup} />
-              </div>
-            </div>
-          </div>
-          <aside className="workspace-side">
-            <div className="panel stack-md">
-              <div>
-                <div className="panel-label">What code lookup does</div>
-                <h2 className="section-title">Lookup, not authentication</h2>
-              </div>
-              <div className="helper-copy">It confirms the session exists, but it does not carry the encryption key. For actual file access, the full link is still required.</div>
-            </div>
-          </aside>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function ReceiverSession() {
-  const navigate = useNavigate();
-  const location = useLocation();
   const { sessionId } = useParams();
   const sendBackInputRef = useRef(null);
   const fallbackSocketRef = useRef(null);
@@ -850,18 +793,20 @@ function ReceiverSession() {
   const [statusDanger, setStatusDanger] = useState(false);
   const [joined, setJoined] = useState(false);
   const [transportMode, setTransportMode] = useState(TRANSPORT_WAITING);
-  const [lookupResult, setLookupResult] = useState(location.state?.lookup || null);
+  const [sessionExpiresAt, setSessionExpiresAt] = useState(null);
   const [receivedFiles, setReceivedFiles] = useState([]);
   const [outgoingFiles, setOutgoingFiles] = useState([]);
   const [confirmKill, setConfirmKill] = useState(false);
   const [incomingPeekUrl, setIncomingPeekUrl] = useState('');
   const receiverUrl = new URL(window.location.href);
-  const queryToken = receiverUrl.searchParams.get('t') || receiverUrl.searchParams.get('token') || '';
-  const queryKeyBase64 = receiverUrl.searchParams.get('k') || '';
+  // Secrets arrive in the URL fragment (#token.key) — never sent to the server.
+  // Legacy ?t=&k= query links are still accepted for backward compatibility.
   const fragment = window.location.hash.replace(/^#/, '');
   const [fragmentToken, fragmentKeyBase64] = fragment.split('.');
-  const token = queryToken || fragmentToken || '';
-  const keyBase64 = queryKeyBase64 || fragmentKeyBase64 || '';
+  const queryToken = receiverUrl.searchParams.get('t') || receiverUrl.searchParams.get('token') || '';
+  const queryKeyBase64 = receiverUrl.searchParams.get('k') || '';
+  const token = fragmentToken || queryToken || '';
+  const keyBase64 = fragmentKeyBase64 || queryKeyBase64 || '';
   const fullLinkMode = Boolean(token && keyBase64);
   const [key, setKey] = useState(null);
   const transportRef = useRef(null);
@@ -1024,7 +969,7 @@ function ReceiverSession() {
         const message = JSON.parse(event.data);
         console.log('Receiver WebSocket message:', message.type, message);
         if (message.expiresAt) {
-          setLookupResult((current) => ({ ...(current || {}), expiresAt: message.expiresAt }));
+          setSessionExpiresAt(message.expiresAt);
         }
 
         switch (message.type) {
@@ -1140,7 +1085,7 @@ function ReceiverSession() {
     event.target.value = '';
   }
 
-  const expiresAt = lookupResult?.expiresAt || Date.now() + 60 * 60 * 1000;
+  const expiresAt = sessionExpiresAt || Date.now() + 60 * 60 * 1000;
   const remaining = expiresAt - now;
   const timerClass = remaining <= 60 * 1000 ? 'critical' : remaining <= 5 * 60 * 1000 ? 'warning' : '';
 
@@ -1153,28 +1098,24 @@ function ReceiverSession() {
               <div className="workspace-shell stack-lg">
                 <div className="brand-block">
                   <div className="wordmark">Peek</div>
-                  <div className="eyebrow">Session lookup</div>
+                  <div className="eyebrow">Incomplete link</div>
                 </div>
                 <div className="stack-md">
-                  <h1 className="section-title">Session found</h1>
-                  <div className="hero-copy">Files available: {lookupResult?.filesAvailable ?? 'unknown'}</div>
-                  {lookupResult?.expiresAt ? (
-                    <div className="status-pill">Expires in {formatTimer(lookupResult.expiresAt)}</div>
-                  ) : null}
+                  <h1 className="section-title">This link is missing its key</h1>
+                  <div className="hero-copy">
+                    A Peek link only works in full. Scan the QR code on the sending device, or open the complete link it generated — the part after <span className="code">#</span> carries the key needed to connect.
+                  </div>
                 </div>
-                <button type="button" className="button-secondary" onClick={() => navigate('/r')}>
-                  Back
-                </button>
               </div>
             </div>
             <aside className="workspace-side">
               <div className="panel stack-md">
                 <div>
-                  <div className="panel-label">Next step</div>
-                  <h2 className="section-title">You still need the full link</h2>
+                  <div className="panel-label">Why</div>
+                  <h2 className="section-title">The key never touches our servers</h2>
                 </div>
                 <div className="helper-copy">
-                  Code lookup only tells you the session exists. To receive files, open the full Peek link on this device and ask the sender to share it directly.
+                  Peek keeps the session token and encryption key in the link fragment, which browsers never send to the server. That means the full link must be opened as-is on the receiving device.
                 </div>
               </div>
             </aside>
@@ -1334,7 +1275,6 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<SenderApp />} />
-      <Route path="/r" element={<ReceiverLookup />} />
       <Route path="/r/:sessionId" element={<ReceiverSession />} />
     </Routes>
   );

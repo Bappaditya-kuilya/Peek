@@ -20,12 +20,12 @@ export function ViewShare({
           <div className="panel-label">View-only share</div>
           <h2 className="section-title">Peek link</h2>
         </div>
-        <div className="status-pill">PDF or image, up to 10MB</div>
+        <div className="status-pill">Any file, up to 50MB</div>
       </div>
 
       <label className="view-field">
         <span className="panel-label">File</span>
-        <input className="view-input" disabled={disabled} id="peek-file" name="peek_file" onChange={(event) => onFileChange(event.target.files?.[0] || null)} type="file" accept="application/pdf,image/*" />
+        <input className="view-input" disabled={disabled} id="peek-file" name="peek_file" onChange={(event) => onFileChange(event.target.files?.[0] || null)} type="file" />
       </label>
 
       <label className="view-field">

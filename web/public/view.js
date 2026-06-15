@@ -11,38 +11,23 @@ const RELAY_HTTP_URL = isLocalHost
   ? `${window.location.protocol === 'https:' ? 'https:' : 'http:'}//${window.location.hostname}:${LOCAL_RELAY_PORT}`
   : PRODUCTION_RELAY_HTTP_URL;
 const IV_LENGTH = 12;
-const SUPPORTED_TYPES = new Set([
+const PREVIEWABLE_TYPES = new Set([
   'application/pdf',
   'image/jpeg',
-  'image/jpg',
   'image/png',
   'image/gif',
   'image/webp',
-  'image/svg+xml',
 ]);
 
-function inferMimeTypeFromFilename(filename = '') {
-  const normalizedName = String(filename).trim().toLowerCase();
-  if (normalizedName.endsWith('.pdf')) return 'application/pdf';
-  if (normalizedName.endsWith('.jpg') || normalizedName.endsWith('.jpeg')) return 'image/jpeg';
-  if (normalizedName.endsWith('.png')) return 'image/png';
-  if (normalizedName.endsWith('.gif')) return 'image/gif';
-  if (normalizedName.endsWith('.webp')) return 'image/webp';
-  if (normalizedName.endsWith('.svg')) return 'image/svg+xml';
-  return 'application/octet-stream';
-}
-
-function normalizeMimeType(mimeType = '', filename = '') {
+function normalizeMimeType(mimeType = '') {
   const normalizedMimeType = String(mimeType).trim().toLowerCase();
   if (normalizedMimeType === 'image/jpg') {
     return 'image/jpeg';
   }
-
-  if (SUPPORTED_TYPES.has(normalizedMimeType)) {
+  if (PREVIEWABLE_TYPES.has(normalizedMimeType)) {
     return normalizedMimeType;
   }
-
-  return inferMimeTypeFromFilename(filename);
+  return 'application/octet-stream';
 }
 
 const app = document.getElementById('app');
@@ -153,9 +138,34 @@ async function renderImage(blob) {
   return img;
 }
 
+function renderDownload(blob, filename) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'download-block';
+
+  const note = document.createElement('div');
+  note.className = 'meta';
+  note.textContent = 'This file type cannot be previewed in the browser. It stays encrypted until you save it.';
+
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.className = 'download-button';
+  anchor.href = objectUrl;
+  anchor.download = filename || 'peek-file';
+  anchor.textContent = `Download ${filename || 'file'}`;
+  anchor.addEventListener('click', () => {
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
+  }, { once: true });
+
+  wrapper.append(note, anchor);
+  return wrapper;
+}
+
 async function main() {
   const url = new URL(window.location.href);
-  const keyBase64 = url.searchParams.get('k') || '';
+  // The key is carried in the fragment (#k=…) so it never reaches the server.
+  // Fall back to the legacy ?k= query param for links created before this change.
+  const hashParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+  const keyBase64 = hashParams.get('k') || url.searchParams.get('k') || '';
   const queryViewId = url.searchParams.get('id') || '';
   const pathViewId = url.pathname.split('/').filter(Boolean).pop();
   const viewId = queryViewId || (pathViewId !== 'view' && pathViewId !== 'view.html' ? pathViewId : '');
@@ -190,10 +200,7 @@ async function main() {
 
   const expiresAt = Number(response.headers.get('X-Expires-At')) || Date.now();
   const filename = response.headers.get('X-Filename') || 'Peek file';
-  const mimeType = normalizeMimeType(
-    response.headers.get('X-Mime-Type') || 'application/octet-stream',
-    filename
-  );
+  const mimeType = normalizeMimeType(response.headers.get('X-Mime-Type') || 'application/octet-stream');
 
   let decrypted;
   try {
@@ -228,10 +235,10 @@ async function main() {
   try {
     if (mimeType === 'application/pdf') {
       viewerNode.appendChild(await renderPdf(blob));
-    } else if (SUPPORTED_TYPES.has(mimeType) && mimeType.startsWith('image/')) {
+    } else if (mimeType.startsWith('image/')) {
       viewerNode.appendChild(await renderImage(blob));
     } else {
-      renderStatus('This Peek file type is not supported.', true);
+      viewerNode.appendChild(renderDownload(blob, filename));
     }
   } catch {
     renderStatus('Unable to render this Peek.', true);
