@@ -1,4 +1,4 @@
-const PRODUCTION_RELAY_HTTP_URL = 'https://passr-relay-production.up.railway.app';
+const PRODUCTION_RELAY_HTTP_URL = 'https://peek-relay-eku9.onrender.com';
 const LOCAL_RELAY_PORT = '3000';
 const isLocalHost = (
   window.location.hostname === 'localhost' ||

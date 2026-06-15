@@ -34,4 +34,3 @@ jobs:
       - name: Deployment placeholder
         run: |
           echo "Add your real relay deployment command here."
-          echo "Example: flyctl deploy --remote-only"
