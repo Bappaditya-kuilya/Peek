@@ -800,9 +800,23 @@ function ReceiverSession() {
   const [incomingPeekUrl, setIncomingPeekUrl] = useState('');
   const receiverUrl = new URL(window.location.href);
   // Secrets arrive in the URL fragment (#token.key) — never sent to the server.
+  // Both halves are percent-encoded when the link is built (the base64 key can
+  // contain +, /, =), so decode each part before use.
   // Legacy ?t=&k= query links are still accepted for backward compatibility.
   const fragment = window.location.hash.replace(/^#/, '');
-  const [fragmentToken, fragmentKeyBase64] = fragment.split('.');
+  const [fragmentTokenRaw, fragmentKeyRaw] = fragment.split('.');
+  const decodeFragmentPart = (value) => {
+    if (!value) {
+      return '';
+    }
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  };
+  const fragmentToken = decodeFragmentPart(fragmentTokenRaw);
+  const fragmentKeyBase64 = decodeFragmentPart(fragmentKeyRaw);
   const queryToken = receiverUrl.searchParams.get('t') || receiverUrl.searchParams.get('token') || '';
   const queryKeyBase64 = receiverUrl.searchParams.get('k') || '';
   const token = fragmentToken || queryToken || '';
