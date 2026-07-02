@@ -65,6 +65,31 @@ Peek
   3. Transfer, then close. Send, receive, end the session. Done.
 
   ---
+
+  Quick start (development)
+
+  ```bash
+  git clone <repo-url> && cd Peek
+  npm install
+  npm --prefix web install
+  npm --prefix relay start &    # relay on port 3000
+  npm --prefix web dev           # web on port 5173
+  ```
+
+  Tests: `npm test` (runs relay + web suites)
+
+  ---
+
+  Documentation
+
+  - [Architecture](ARCHITECTURE.md) — system design, components, data flow
+  - [Protocol](PROTOCOL.md) — binary packet format, WebSocket messages
+  - [Contributing](CONTRIBUTING.md) — dev setup, code style, PR process
+  - [Security](SECURITY.md) — threat model, crypto choices, limitations
+  - [Deployment](DEPLOYMENT.md) — Vercel + Render setup, env vars
+  - [Redis Persistence](relay/REDIS.md) — optional Redis backend
+
+  ---
   Peek is for the in-between moments — the borrowed computer, the public terminal, the quick handoff — where every other option is too slow, too permanent, or too risky.
 
   ---
