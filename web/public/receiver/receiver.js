@@ -1,5 +1,3 @@
-import { sanitizeFilename, safeBaseName } from './sanitize.js';
-
 const PRODUCTION_RELAY_HTTP_URL = 'https://peek-relay-eku9.onrender.com';
 const PRODUCTION_RELAY_WS_URL = 'wss://peek-relay-eku9.onrender.com';
 const LOCAL_RELAY_PORT = '3000';
@@ -16,18 +14,10 @@ const RELAY_HTTP_URL = isLocalHost
 const RELAY_WS_URL = isLocalHost
   ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:${LOCAL_RELAY_PORT}`
   : PRODUCTION_RELAY_WS_URL;
-const IV_LENGTH = 12;
-const CHUNK_SIZE = 48 * 1024;
-const PACKET_MANIFEST = 1;
-const PACKET_CHUNK = 2;
-const PACKET_FILE_COMPLETE = 3;
-const PACKET_DOWNLOAD_NOTICE = 4;
-const MAX_CLIPBOARD_CHARS = 2000;
 const CLIPBOARD_DEBOUNCE_MS = 500;
 const SESSION_ENDED_CLOSE_CODES = new Set([4000, 4001]);
 const SESSION_REPLACED_CLOSE_CODE = 4005;
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
+const MAX_CHUNKS_PER_FILE = 1000000;
 
 const state = {
   activity: [],
@@ -71,19 +61,6 @@ function parseJoinInfo() {
   };
 }
 
-function formatBytes(size) {
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(size < 10 * 1024 ? 1 : 0)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(size < 10 * 1024 * 1024 ? 1 : 0)} MB`;
-}
-
-function formatTimer(expiresAt) {
-  const remainingSeconds = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
-  const minutes = Math.floor(remainingSeconds / 60);
-  const seconds = remainingSeconds % 60;
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-}
-
 function classifyTimer(expiresAt) {
   const remaining = expiresAt - Date.now();
   if (remaining <= 60 * 1000) return 'critical';
@@ -112,18 +89,6 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
-}
-
-function normalizeClipboardText(value) {
-  return String(value || '').replace(/\r\n?/g, '\n').slice(0, MAX_CLIPBOARD_CHARS);
-}
-
-function bytesToBase64(bytes) {
-  let binary = '';
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return window.btoa(binary);
 }
 
 function fileIconSvg(type = 'doc') {
@@ -173,13 +138,11 @@ function render() {
       <div class="screen stack-lg">
         <div class="screen-header"><div class="wordmark">Peek</div></div>
         <div class="stack-md">
-          <h1 class="title">Enter your 6-digit code</h1>
-          <input id="code-input" class="code-input" inputmode="numeric" maxlength="6" pattern="[0-9]*" />
-          <div class="note">For full access, open the full QR link instead.</div>
+          <h1 class="title">Open the full Peek link</h1>
+          <div class="copy">To receive files, scan the QR code or open the full link shared by the sender.</div>
         </div>
       </div>
     `;
-    bindCodeInput();
     return;
   }
 
@@ -319,130 +282,6 @@ function bindCodeInput() {
   });
 }
 
-function base64ToBytes(base64) {
-  const binary = window.atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
-}
-
-async function importKey(base64) {
-  const raw = base64ToBytes(base64);
-  return window.crypto.subtle.importKey(
-    'raw',
-    raw,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['decrypt', 'encrypt']
-  );
-}
-
-async function encryptChunk(key, chunk) {
-  const iv = window.crypto.getRandomValues(new Uint8Array(IV_LENGTH));
-  const encrypted = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, chunk);
-  const bytes = new Uint8Array(encrypted);
-  const output = new Uint8Array(IV_LENGTH + bytes.byteLength);
-  output.set(iv, 0);
-  output.set(bytes, IV_LENGTH);
-  return output.buffer;
-}
-
-async function decryptChunk(key, buffer) {
-  const bytes = new Uint8Array(buffer);
-  const iv = bytes.slice(0, IV_LENGTH);
-  const ciphertext = bytes.slice(IV_LENGTH);
-  return window.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
-}
-
-async function encryptClipboardText(text) {
-  const encrypted = await encryptChunk(state.key, encoder.encode(normalizeClipboardText(text)));
-  return bytesToBase64(new Uint8Array(encrypted));
-}
-
-async function decryptClipboardText(payloadBase64) {
-  const encryptedBytes = base64ToBytes(String(payloadBase64 || ''));
-  const decrypted = await decryptChunk(state.key, encryptedBytes.buffer);
-  return normalizeClipboardText(decoder.decode(decrypted));
-}
-
-function concatBuffers(parts) {
-  const size = parts.reduce((total, part) => total + part.length, 0);
-  const output = new Uint8Array(size);
-  let offset = 0;
-  for (const part of parts) {
-    output.set(part, offset);
-    offset += part.length;
-  }
-  return output;
-}
-
-function encodeManifest(files) {
-  const body = encoder.encode(
-    JSON.stringify({
-      files: files.map((file, index) => ({
-        id: index,
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        totalChunks: Math.ceil(file.size / CHUNK_SIZE),
-      })),
-    })
-  );
-  return concatBuffers([Uint8Array.of(PACKET_MANIFEST), body]).buffer;
-}
-
-function encodeChunkPacket(fileId, chunkIndex, bytes) {
-  const header = new Uint8Array(7);
-  const view = new DataView(header.buffer);
-  header[0] = PACKET_CHUNK;
-  view.setUint16(1, fileId);
-  view.setUint32(3, chunkIndex);
-  return concatBuffers([header, bytes]).buffer;
-}
-
-function encodeFileComplete(fileId) {
-  const packet = new Uint8Array(3);
-  packet[0] = PACKET_FILE_COMPLETE;
-  new DataView(packet.buffer).setUint16(1, fileId);
-  return packet.buffer;
-}
-
-function encodeDownloadNotice(fileId) {
-  const packet = new Uint8Array(3);
-  packet[0] = PACKET_DOWNLOAD_NOTICE;
-  new DataView(packet.buffer).setUint16(1, fileId);
-  return packet.buffer;
-}
-
-function decodePacket(buffer) {
-  const bytes = new Uint8Array(buffer);
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const type = bytes[0];
-
-  if (type === PACKET_MANIFEST) {
-    return { type: 'manifest', payload: JSON.parse(decoder.decode(bytes.slice(1))) };
-  }
-  if (type === PACKET_FILE_COMPLETE) {
-    return { type: 'file-complete', payload: { fileId: view.getUint16(1) } };
-  }
-  if (type === PACKET_DOWNLOAD_NOTICE) {
-    return { type: 'download-notice', payload: { fileId: view.getUint16(1) } };
-  }
-  if (type === PACKET_CHUNK) {
-    return {
-      type: 'chunk',
-      payload: {
-        fileId: view.getUint16(1),
-        chunkIndex: view.getUint32(3),
-        chunkBytes: bytes.slice(7),
-      },
-    };
-  }
-  throw new Error('Unknown packet');
-}
-
 function getTransport() {
   return {
     getBufferedAmount() {
@@ -468,7 +307,7 @@ async function sendEncryptedPacket(packet) {
 }
 
 async function sendFiles(files) {
-  await sendEncryptedPacket(encodeManifest(files));
+  await sendEncryptedPacket(encodeManifestPacket(files));
   for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
     const file = files[fileIndex];
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE) || 1;
@@ -481,7 +320,7 @@ async function sendFiles(files) {
         await new Promise((resolve) => window.setTimeout(resolve, 25));
       }
     }
-    await sendEncryptedPacket(encodeFileComplete(fileIndex));
+    await sendEncryptedPacket(encodeFileCompletePacket(fileIndex));
   }
 }
 
@@ -511,7 +350,7 @@ async function handleBinaryMessage(buffer) {
     state.incomingFiles.clear();
     state.receivedFiles = packet.payload.files.map((file) => ({
       ...file,
-      chunks: new Array(file.totalChunks).fill(null),
+      chunks: new Array(Math.min(file.totalChunks, MAX_CHUNKS_PER_FILE)).fill(null),
       progress: 0,
       status: 'queued',
     }));
@@ -554,7 +393,7 @@ async function handleClipboardMessage(message) {
   }
 
   try {
-    state.clipboardReceived = await decryptClipboardText(message.payload);
+    state.clipboardReceived = await decryptClipboardText(state.key, message.payload);
     render();
   } catch {}
 }
@@ -569,7 +408,7 @@ async function setupConnection() {
   }
 
   if (!state.key) {
-    state.key = await importKey(state.joinInfo.keyBase64);
+    state.key = await importKeyFromBase64(state.joinInfo.keyBase64);
   }
   state.socket = new WebSocket(RELAY_WS_URL);
   state.socket.binaryType = 'arraybuffer';
@@ -701,7 +540,7 @@ function bindReceiverActions() {
       }
 
       try {
-        const payload = await encryptClipboardText(state.clipboardDraft);
+        const payload = await encryptClipboardText(state.key, state.clipboardDraft);
         state.socket.send(JSON.stringify({ type: 'clipboard-push', payload }));
       } catch {}
     }, CLIPBOARD_DEBOUNCE_MS);
@@ -732,7 +571,7 @@ function bindReceiverActions() {
       anchor.download = safeBaseName(file.name);
       anchor.click();
       URL.revokeObjectURL(url);
-      await sendEncryptedPacket(encodeDownloadNotice(fileId));
+      await sendEncryptedPacket(encodeDownloadNoticePacket(fileId));
     });
   });
 

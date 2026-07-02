@@ -1,15 +1,12 @@
-// receiver/sanitize.js
-// No library. The browser's own DOM and string handling do the work.
-
-// Escape a string for safe insertion into innerHTML. Prevents XSS via a
-// filename chosen by the sending device, e.g. "<img src=x onerror=alert(1)>".
+// Escape a string for safe insertion into innerHTML. JSX already escapes text
+// nodes, so this exists for any non-JSX DOM write and as a defensive helper.
 export function sanitizeFilename(name) {
   const div = document.createElement('div');
   div.appendChild(document.createTextNode(name == null ? '' : String(name)));
   return div.innerHTML;
 }
 
-// Reduce a sender-supplied name to a safe basename for use as a download
+// Reduce a peer-supplied name to a safe basename for use as a download
 // filename or ZIP entry path. Strips directory components and control
 // characters so a name like "../../evil.sh" cannot escape the target folder
 // (Zip-Slip / path traversal). HTML-escaping would be wrong here — this is a

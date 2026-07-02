@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const { WebSocketServer } = require('ws');
+const logger = require('./logger');
 const { handleWebSocket } = require('./relay');
 const {
   getSession,
@@ -16,8 +17,6 @@ const {
   validateUploadToken,
 } = require('./viewStore');
 const {
-  allowedOrigins,
-  getRequestIp,
   isAllowedOrigin,
   requireAllowedOrigin,
   sessionCreateLimiter,
@@ -26,6 +25,30 @@ const {
   viewFetchLimiter,
   viewUploadLimiter,
 } = require('./security');
+
+const { setSessionStore, setLiveSessionRegistry } = require('./session');
+const { setViewStore } = require('./viewStore');
+
+if (process.env.STORE_BACKEND === 'redis') {
+  const redis = require('redis');
+  const { createRedisSessionStore } = require('./stores/redisSessionStore');
+  const { createRedisViewStore } = require('./stores/redisViewStore');
+  const { createRedisLiveSessionRegistry } = require('./stores/redisLiveSessionRegistry');
+
+  const redisClient = redis.createClient({ url: process.env.REDIS_URL || 'redis://localhost:6379' });
+  redisClient.on('error', (err) => logger.error({ err }, 'redis client error'));
+
+  redisClient.connect()
+    .then(() => {
+      setSessionStore(createRedisSessionStore(redisClient));
+      setViewStore(createRedisViewStore(redisClient));
+      setLiveSessionRegistry(createRedisLiveSessionRegistry(redisClient));
+      logger.info('Peek relay using Redis-backed stores');
+    })
+    .catch((err) => {
+      logger.error({ err }, 'Redis connect failed, falling back to in-memory stores');
+    });
+}
 
 const app = express();
 const MAX_VIEW_BYTES = 50 * 1024 * 1024;
@@ -108,6 +131,11 @@ app.post('/session', requireAllowedOrigin, sessionCreateLimiter, async (req, res
 
   const fileCount = Math.floor(fileCountRaw);
   const session = await createSession(fileCount);
+  if (!session) {
+    res.status(500).json({ error: 'Failed to create session' });
+    return;
+  }
+  logger.info({ event: 'session_create', sessionId: session.id, fileCount });
   res.json({
     sessionId: session.id,
     token: session.token,
@@ -172,6 +200,7 @@ app.post(
       return;
     }
 
+    logger.info({ event: 'view_create', viewId: view.id });
     res.status(201).json(view);
   }
 );
@@ -187,6 +216,12 @@ app.get('/view/:id', viewFetchLimiter, async (req, res) => {
     return;
   }
 
+  if (view.onceOnly) {
+    await deleteView(req.params.id);
+  }
+
+  logger.info({ event: 'view_access', viewId: req.params.id });
+
   res.setHeader('Content-Type', 'application/octet-stream');
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Filename', view.filename);
@@ -197,9 +232,8 @@ app.get('/view/:id', viewFetchLimiter, async (req, res) => {
 
   res.write(view.encryptedBlob);
   res.on('finish', async () => {
-    await incrementViewCount(req.params.id);
-    if (view.onceOnly) {
-      await deleteView(req.params.id);
+    if (!view.onceOnly) {
+      await incrementViewCount(req.params.id);
     }
   });
   res.end();
@@ -221,7 +255,7 @@ app.delete('/view/:id', requireAllowedOrigin, viewDeleteLimiter, express.json({ 
 });
 
 app.get('/health', (req, res) => {
-  res.json({ ok: true, allowedOrigins, requestIp: getRequestIp(req) });
+  res.json({ status: 'ok', uptime: process.uptime() });
 });
 
 async function start() {
@@ -231,11 +265,11 @@ async function start() {
 
   const port = process.env.PORT || 3000;
   server.listen(port, () => {
-    console.log(`Peek relay running on port ${port}`);
+    logger.info({ event: 'server_start', port });
   });
 }
 
 start().catch((error) => {
-  console.error('Peek relay failed to start:', error);
+  logger.error({ event: 'error', error: error.message, stack: error.stack });
   process.exitCode = 1;
 });

@@ -676,6 +676,29 @@ textarea:focus-visible {
   background: var(--ink);
 }
 
+.file-progress.error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: auto;
+  padding: 6px 10px;
+  background: #fef2f2;
+  border-top: 1px solid #fecaca;
+}
+
+.file-progress.error .file-progress-bar {
+  background: #dc2626;
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.retry-button {
+  font-size: 12px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
 .picker-meta,
 .table-summary {
   display: flex;

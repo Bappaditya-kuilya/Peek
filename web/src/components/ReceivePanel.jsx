@@ -1,3 +1,4 @@
+import { FileDropzone } from './FileDropzone.jsx';
 import { FileRow } from './FileRow.jsx';
 import { downloadAllAsZip } from '../utils/zip.js';
 
@@ -51,12 +52,10 @@ export function ReceivePanel({
 
       <div className="stack-sm">
         <div className="panel-label">Send files back</div>
-        <button type="button" className="receive-dropzone" onClick={onSelectFiles}>
-          <span>
-            <strong>Choose files to return</strong>
-            Drop files here or click to browse
-          </span>
-        </button>
+        <FileDropzone onClick={onSelectFiles}>
+          <strong>Choose files to return</strong>
+          Drop files here or click to browse
+        </FileDropzone>
       </div>
     </div>
   );

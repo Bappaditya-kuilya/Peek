@@ -1,3 +1,4 @@
+const logger = require('./logger');
 const {
   clearRoleSocket,
   getSession,
@@ -57,7 +58,8 @@ async function handleJoinMessage(socket, message, role) {
 
   const session = await getSession(message.sessionId);
   if (!session || !(await validateToken(message.sessionId, message.token))) {
-    console.warn('Peek join rejected', {
+    logger.warn({
+      event: 'session_join_rejected',
       role,
       sessionId: String(message.sessionId || ''),
       tokenPresent: Boolean(message.token),
@@ -88,9 +90,10 @@ async function handleJoinMessage(socket, message, role) {
   const peerSocket = getRoleSocket(message.sessionId, peerRole);
   const peerJoinedAt = peerRole === 'initiator' ? session.initiatorJoinedAt : session.joinerJoinedAt;
 
-  console.log('Peek join accepted', {
-    role,
+  logger.info({
+    event: 'session_join',
     sessionId: message.sessionId,
+    role,
   });
   sendJson(socket, { type: `${role}-ready`, expiresAt: session.expiresAt });
   if (peerSocket || peerJoinedAt) {
@@ -164,7 +167,7 @@ async function handleRelayMessage(socket, rawData, isBinary) {
 async function handleWebSocket(socket, req) {
   const origin = req.headers.origin;
   if (!isAllowedOrigin(origin)) {
-    console.warn('Peek WebSocket forbidden origin', { origin });
+    logger.warn({ event: 'forbidden_origin', origin });
     socket.close(4003, 'Forbidden origin');
     return;
   }
@@ -177,7 +180,8 @@ async function handleWebSocket(socket, req) {
   }
 
   socket.on('message', (rawData, isBinary) => {
-    handleRelayMessage(socket, rawData, isBinary).catch(() => {
+    handleRelayMessage(socket, rawData, isBinary).catch((err) => {
+      logger.error({ event: 'error', error: err.message, stack: err.stack });
       socket.close(1011, 'Relay failure');
     });
   });
@@ -198,6 +202,11 @@ async function handleWebSocket(socket, req) {
     }
     clearRoleSocket(socket.sessionId, socket.role, socket);
     notifyPeerDisconnected(socket.sessionId, socket.role);
+    logger.info({
+      event: 'session_leave',
+      sessionId: socket.sessionId,
+      role: socket.role,
+    });
   });
 }
 

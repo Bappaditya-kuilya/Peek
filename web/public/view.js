@@ -10,7 +10,6 @@ const isLocalHost = (
 const RELAY_HTTP_URL = isLocalHost
   ? `${window.location.protocol === 'https:' ? 'https:' : 'http:'}//${window.location.hostname}:${LOCAL_RELAY_PORT}`
   : PRODUCTION_RELAY_HTTP_URL;
-const IV_LENGTH = 12;
 const PREVIEWABLE_TYPES = new Set([
   'application/pdf',
   'image/jpeg',
@@ -57,33 +56,6 @@ function buildShell({ timerText = 'View only', content }) {
   contentPanel.append(content);
   shell.append(header, contentPanel);
   app.append(shell);
-}
-
-function base64ToBytes(base64) {
-  const binary = window.atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
-}
-
-async function importViewKey(base64) {
-  const rawBytes = base64ToBytes(base64);
-  return window.crypto.subtle.importKey(
-    'raw',
-    rawBytes,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['decrypt']
-  );
-}
-
-async function decryptViewFile(encryptionKey, encryptedBuffer) {
-  const bytes = new Uint8Array(encryptedBuffer);
-  const iv = bytes.slice(0, IV_LENGTH);
-  const ciphertext = bytes.slice(IV_LENGTH);
-  return window.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, encryptionKey, ciphertext);
 }
 
 function renderStatus(message, isError = false) {
@@ -204,8 +176,8 @@ async function main() {
 
   let decrypted;
   try {
-    const key = await importViewKey(keyBase64);
-    decrypted = await decryptViewFile(key, await response.arrayBuffer());
+    const key = await importKeyFromBase64(keyBase64);
+    decrypted = await decryptChunk(key, await response.arrayBuffer());
   } catch {
     renderStatus('Unable to decrypt this Peek. The link may be incomplete or corrupted.', true);
     return;

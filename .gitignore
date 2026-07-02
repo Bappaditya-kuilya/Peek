@@ -1,8 +1,5 @@
 node_modules/
 dist/
-
-# Static receiver assets are built from /web/receiver-src by vite-plugin-static-copy.
-web/public/receiver/
 .DS_Store
 *.log
 .env
@@ -10,3 +7,12 @@ web/public/receiver/
 .env.*.local
 .vercel
 .env*
+CLAUDE.md
+Execution.md
+plan.md
+ARCHITECTURE.md
+CONTRIBUTING.md
+DEPLOYMENT.md
+PROTOCOL.md
+SECURITY.md
+relay/REDIS.md

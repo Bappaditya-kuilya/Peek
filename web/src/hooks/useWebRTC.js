@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { recordIceEvent, shouldWarnTurn } from '../shared/iceMonitor.js';
 
 const DEV_ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -56,6 +57,8 @@ export function useWebRTC({
 }) {
   const peerConnectionRef = useRef(null);
   const dataChannelRef = useRef(null);
+  const restartCountRef = useRef(0);
+  const MAX_ICE_RESTARTS = 2;
 
   useEffect(() => {
     return () => {
@@ -77,9 +80,24 @@ export function useWebRTC({
 
     connection.oniceconnectionstatechange = () => {
       const state = connection.iceConnectionState;
+      recordIceEvent(state);
       onConnectionStateChange?.(state);
+
+      if (state === 'connected' || state === 'completed') {
+        restartCountRef.current = 0;
+        return;
+      }
+
       if (state === 'failed') {
-        onFallbackNeeded?.();
+        if (restartCountRef.current < MAX_ICE_RESTARTS) {
+          restartCountRef.current += 1;
+          connection.restartIce();
+        } else {
+          if (shouldWarnTurn()) {
+            console.warn('[Peek] ICE failure rate >5% over 24h. Consider adding TURN servers.');
+          }
+          onFallbackNeeded?.();
+        }
       }
     };
 

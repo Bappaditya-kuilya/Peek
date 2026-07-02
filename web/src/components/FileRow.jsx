@@ -1,5 +1,6 @@
 import { FileIcon } from './FileIcon.jsx';
-import { formatBytes } from '../utils/format.js';
+import { ProgressBar } from './ProgressBar.jsx';
+import { formatBytes } from '../shared/format.js';
 
 function inferIconType(fileName = '', mimeType = '') {
   if (mimeType.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg)$/i.test(fileName)) {
@@ -45,11 +46,7 @@ export function FileRow({
         )}
       </div>
 
-      {progress > 0 && progress < 100 ? (
-        <div className="file-progress" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
-          <div className="file-progress-bar" style={{ width: `${progress}%` }} />
-        </div>
-      ) : null}
+      <ProgressBar value={progress} />
     </div>
   );
 }

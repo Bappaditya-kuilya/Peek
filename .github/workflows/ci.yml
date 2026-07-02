@@ -32,8 +32,14 @@ jobs:
         working-directory: web
 
       - name: Run relay tests
-        run: npm run test:relay
+        run: npm test
+        working-directory: relay
+
+      - name: Run web tests
+        run: npm test
+        working-directory: web
 
       - name: Build web app
         run: npm run build
+        working-directory: web
 

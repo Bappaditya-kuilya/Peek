@@ -1,5 +1,7 @@
+import { ErrorBanner } from './ErrorBanner.jsx';
 import { FileRow } from './FileRow.jsx';
-import { formatBytes } from '../utils/format.js';
+import { Watermark } from './Watermark.jsx';
+import { formatBytes } from '../shared/format.js';
 
 export function FilePicker({
   files,
@@ -17,10 +19,7 @@ export function FilePicker({
       <div className="workspace-main">
         <div className="workspace-shell stack-lg">
           <div className="workspace-header compact">
-            <div className="brand-block">
-              <div className="wordmark">Peek</div>
-              <div className="eyebrow">Step 1 of 2</div>
-            </div>
+            <Watermark eyebrow="Step 1 of 2" />
             <button type="button" className="link-chip" onClick={onBack}>
               Back
             </button>
@@ -59,7 +58,7 @@ export function FilePicker({
             </button>
           </div>
 
-          {statusMessage ? <div className="notice-banner danger">{statusMessage}</div> : null}
+          <ErrorBanner>{statusMessage}</ErrorBanner>
         </div>
       </div>
 

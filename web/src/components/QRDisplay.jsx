@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ErrorBanner } from './ErrorBanner.jsx';
 import { createQrDataUrl } from '../utils/qr.js';
-import { formatTimer, timerLabel } from '../utils/format.js';
+import { formatTimer, timerLabel } from '../shared/format.js';
 
 export function QRDisplay({ expiresAt, joinUrl }) {
   const [qrUrl, setQrUrl] = useState('');
@@ -48,7 +49,7 @@ export function QRDisplay({ expiresAt, joinUrl }) {
       <div className="qr-copy">
         Scan with the other device's camera to open Peek and receive files.
       </div>
-      <div className="notice-banner warning">Keep this screen open until the transfer completes.</div>
+      <ErrorBanner tone="warning">Keep this screen open until the transfer completes.</ErrorBanner>
     </div>
   );
 }
