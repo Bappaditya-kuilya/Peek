@@ -1,104 +1,15 @@
 import { useRef } from 'react';
-import { encryptChunk, decryptChunk } from './useCrypto.js';
+import { encryptChunk, decryptChunk } from '../shared/crypto.js';
+import {
+  CHUNK_SIZE,
+  encodeManifestPacket,
+  encodeFileCompletePacket,
+  encodeDownloadNoticePacket,
+  encodeChunkPacket,
+  decodePacket,
+} from '../shared/packetProtocol.js';
 
-const CHUNK_SIZE = 48 * 1024;
-const PACKET_MANIFEST = 1;
-const PACKET_CHUNK = 2;
-const PACKET_FILE_COMPLETE = 3;
-const PACKET_DOWNLOAD_NOTICE = 4;
-
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
-
-function concatBuffers(parts) {
-  const size = parts.reduce((total, part) => total + part.length, 0);
-  const output = new Uint8Array(size);
-  let offset = 0;
-  for (const part of parts) {
-    output.set(part, offset);
-    offset += part.length;
-  }
-  return output;
-}
-
-function encodeManifestPacket(files) {
-  const body = encoder.encode(
-    JSON.stringify({
-      files: files.map((file, index) => ({
-        id: index,
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        totalChunks: Math.ceil(file.size / CHUNK_SIZE),
-      })),
-    })
-  );
-
-  return concatBuffers([Uint8Array.of(PACKET_MANIFEST), body]).buffer;
-}
-
-function encodeFileCompletePacket(fileId) {
-  const packet = new Uint8Array(3);
-  packet[0] = PACKET_FILE_COMPLETE;
-  new DataView(packet.buffer).setUint16(1, fileId);
-  return packet.buffer;
-}
-
-function encodeDownloadNoticePacket(fileId) {
-  const packet = new Uint8Array(3);
-  packet[0] = PACKET_DOWNLOAD_NOTICE;
-  new DataView(packet.buffer).setUint16(1, fileId);
-  return packet.buffer;
-}
-
-function encodeChunkPacket(fileId, chunkIndex, chunkBytes) {
-  const header = new Uint8Array(7);
-  const view = new DataView(header.buffer);
-  header[0] = PACKET_CHUNK;
-  view.setUint16(1, fileId);
-  view.setUint32(3, chunkIndex);
-  return concatBuffers([header, chunkBytes]).buffer;
-}
-
-function decodePacket(buffer) {
-  const bytes = new Uint8Array(buffer);
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const type = bytes[0];
-
-  if (type === PACKET_MANIFEST) {
-    return {
-      type: 'manifest',
-      payload: JSON.parse(decoder.decode(bytes.slice(1))),
-    };
-  }
-
-  if (type === PACKET_FILE_COMPLETE) {
-    return {
-      type: 'file-complete',
-      payload: { fileId: view.getUint16(1) },
-    };
-  }
-
-  if (type === PACKET_DOWNLOAD_NOTICE) {
-    return {
-      type: 'download-notice',
-      payload: { fileId: view.getUint16(1) },
-    };
-  }
-
-  if (type === PACKET_CHUNK) {
-    return {
-      type: 'chunk',
-      payload: {
-        fileId: view.getUint16(1),
-        chunkIndex: view.getUint32(3),
-        chunkBytes: bytes.slice(7),
-      },
-    };
-  }
-
-  throw new Error('Unknown packet type');
-}
+const MAX_CHUNKS_PER_FILE = 1000000;
 
 function ensureArrayBuffer(data) {
   if (data instanceof ArrayBuffer) {
@@ -121,10 +32,20 @@ export function useTransfer({
 }) {
   const incomingFilesRef = useRef(new Map());
   const outgoingFileMapRef = useRef(new Map());
+  const failedChunksRef = useRef([]);
+  const sendContextRef = useRef(null);
 
-  async function sendEncryptedPacket(transport, packetBuffer) {
+  async function sendEncryptedPacket(transport, packetBuffer, retries = 3) {
     const encrypted = await encryptChunk(encryptionKey, packetBuffer);
-    transport.sendBinary(encrypted);
+    for (let attempt = 0; attempt < retries; attempt += 1) {
+      try {
+        transport.sendBinary(encrypted);
+        return;
+      } catch {
+        if (attempt === retries - 1) throw new Error('send-failed');
+        await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
+      }
+    }
   }
 
   async function sendManifest(files, transport) {
@@ -138,6 +59,8 @@ export function useTransfer({
   }
 
   async function sendFiles(files, transport) {
+    sendContextRef.current = { files, transport };
+    failedChunksRef.current = [];
     await sendManifest(files, transport);
 
     for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
@@ -149,21 +72,55 @@ export function useTransfer({
         const end = Math.min(file.size, start + CHUNK_SIZE);
         const chunkBuffer = await file.slice(start, end).arrayBuffer();
         const packet = encodeChunkPacket(fileIndex, chunkIndex, new Uint8Array(chunkBuffer));
-        await sendEncryptedPacket(transport, packet);
+        try {
+          await sendEncryptedPacket(transport, packet);
+        } catch {
+          failedChunksRef.current.push({ fileIndex, chunkIndex, file });
+          onError?.(new Error('chunk-send-failed'));
+          return;
+        }
 
         onSendProgress?.({
           fileId: fileIndex,
           fileName: file.name,
+          size: file.size,
           progress: Math.round(((chunkIndex + 1) / totalChunks) * 100),
         });
 
-        while (transport.getBufferedAmount() > 1024 * 1024) {
-          // Backpressure keeps the browser responsive during larger sends.
-          await new Promise((resolve) => setTimeout(resolve, 25));
-        }
+        await transport.waitForDrain();
       }
 
       await sendEncryptedPacket(transport, encodeFileCompletePacket(fileIndex));
+    }
+    sendContextRef.current = null;
+  }
+
+  async function retryFailedChunks() {
+    const ctx = sendContextRef.current;
+    if (!ctx || !failedChunksRef.current.length) return;
+    const { files, transport } = ctx;
+    const pending = [...failedChunksRef.current];
+    failedChunksRef.current = [];
+
+    for (const { fileIndex, chunkIndex, file } of pending) {
+      const start = chunkIndex * CHUNK_SIZE;
+      const end = Math.min(file.size, start + CHUNK_SIZE);
+      const chunkBuffer = await file.slice(start, end).arrayBuffer();
+      const packet = encodeChunkPacket(fileIndex, chunkIndex, new Uint8Array(chunkBuffer));
+      try {
+        await sendEncryptedPacket(transport, packet);
+      } catch {
+        failedChunksRef.current.push({ fileIndex, chunkIndex, file });
+        onError?.(new Error('chunk-send-failed'));
+        return;
+      }
+      onSendProgress?.({
+        fileId: fileIndex,
+        fileName: file.name,
+        size: file.size,
+        progress: Math.round(((chunkIndex + 1) / (Math.ceil(file.size / CHUNK_SIZE) || 1)) * 100),
+      });
+      await transport.waitForDrain();
     }
   }
 
@@ -193,7 +150,7 @@ export function useTransfer({
     if (packet.type === 'manifest') {
       const files = packet.payload.files.map((file) => ({
         ...file,
-        chunks: new Array(file.totalChunks).fill(null),
+        chunks: new Array(Math.min(file.totalChunks, MAX_CHUNKS_PER_FILE)).fill(null),
         bytesReceived: 0,
         complete: false,
       }));
@@ -255,6 +212,8 @@ export function useTransfer({
 
   return {
     handleBinaryMessage,
+    hasFailedChunks: () => failedChunksRef.current.length > 0,
+    retryFailedChunks,
     sendDownloadNotice,
     sendFiles,
   };

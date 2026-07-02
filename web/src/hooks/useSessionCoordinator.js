@@ -24,7 +24,7 @@ export function useSenderSessionCoordinator({
   setTransferStarted,
   setTransportMode,
   transfer,
-  transferStarted,
+  transferStartedRef,
   transportRef,
   webRtc,
 }) {
@@ -81,7 +81,8 @@ export function useSenderSessionCoordinator({
           }
           fallbackTimeoutRef.current = window.setTimeout(async () => {
             if (!webRtc.dataChannelRef.current || webRtc.dataChannelRef.current.readyState !== 'open') {
-              if (!transferStarted && selectedFiles.length) {
+              if (!transferStartedRef.current && selectedFiles.length) {
+                transferStartedRef.current = true;
                 setTransferStarted(true);
                 await transfer.sendFiles(
                   selectedFiles.map((entry) => entry.file),
