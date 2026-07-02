@@ -86,7 +86,7 @@ Peek
   - [Protocol](PROTOCOL.md) — binary packet format, WebSocket messages
   - [Contributing](CONTRIBUTING.md) — dev setup, code style, PR process
   - [Security](SECURITY.md) — threat model, crypto choices, limitations
-  - [Deployment](DEPLOYMENT.md) — Vercel + Render setup, env vars
+  - [Deployment](DEPLOYMENT.md) — Vercel + Render setup,env vars
   - [Redis Persistence](relay/REDIS.md) — optional Redis backend
 
   ---
