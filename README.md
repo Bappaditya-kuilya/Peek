@@ -83,6 +83,36 @@ npm test
 
 ---
 
+## v1.0.0
+
+The first public release of Peek.
+
+**Highlights**
+
+- End-to-end encrypted file transfer (AES-256-GCM, key in URL fragment)
+- QR-based device pairing — no account, no install
+- Two-way transfer within a single session
+- Clipboard sharing
+- Multiple file transfer with ZIP download
+- Cross-browser support (Chromium, Firefox)
+- Automatic encrypted relay fallback when direct WebRTC is blocked
+
+**Known limitations**
+
+- The relay runs as a single instance by default (in-memory stores). Set `STORE_BACKEND=redis` with a `REDIS_URL` for persistence and horizontal scaling.
+- A TURN server is not deployed by default, so some symmetric-NAT pairs fall back to the relay.
+- Edge and Safari have not been validated in this environment (the code uses only baseline Web Crypto, WebRTC, and WebSocket APIs).
+- Transfers of very large files (e.g. 15 GB) have not been manually validated; the chunked transfer path is size-agnostic.
+
+**Next**
+
+- Redis-backed relay (persistence + scale-out) — already supported via `STORE_BACKEND=redis`
+- TURN server for restrictive networks
+- Resume interrupted transfers
+- Better observability
+
+---
+
 ## License
 
 MIT

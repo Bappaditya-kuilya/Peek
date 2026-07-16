@@ -175,7 +175,7 @@ function createRateLimiter({ bucket, windowMs, max, message }) {
 const sessionCreateLimiter = createRateLimiter({
   bucket: 'session-create',
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 60,
   message: 'Too many sessions created. Please wait.',
 });
 

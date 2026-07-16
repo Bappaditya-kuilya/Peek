@@ -1,5 +1,6 @@
 const express = require('express');
 const http = require('http');
+const compression = require('compression');
 const { WebSocketServer } = require('ws');
 const logger = require('./logger');
 const { handleWebSocket } = require('./relay');
@@ -80,6 +81,7 @@ function normalizeViewMimeType(mimeType = '') {
 }
 
 app.set('trust proxy', trustProxy);
+app.use(compression());
 app.use(express.json({ limit: '256kb' }));
 
 app.disable('x-powered-by');
@@ -87,6 +89,7 @@ app.disable('x-powered-by');
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
