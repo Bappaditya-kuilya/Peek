@@ -1,5 +1,5 @@
-const PRODUCTION_HTTP_URL = 'https://peek-relay-eku9.onrender.com';
-const PRODUCTION_WS_URL = 'wss://peek-relay-eku9.onrender.com';
+const PRODUCTION_HTTP_URL = 'https://peek-relay.bappadityakuilya.workers.dev';
+const PRODUCTION_WS_URL = 'wss://peek-relay.bappadityakuilya.workers.dev';
 
 function isLocalHost(hostname = window.location.hostname) {
   return (
