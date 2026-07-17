@@ -1,8 +1,44 @@
+import { useState } from 'react';
 import { Watermark } from '../../components/Watermark.jsx';
 
-export function SenderHomeHero({ onStart }) {
+export function SenderHomeHero({ onStart, onDrop }) {
+  const [isDragging, setIsDragging] = useState(false);
+
+  function handleDragOver(event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function handleDragEnter(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragging(true);
+  }
+
+  function handleDragLeave(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragging(false);
+  }
+
+  function handleDrop(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragging(false);
+    const files = event.dataTransfer?.files;
+    if (files?.length) {
+      onDrop?.(files);
+    }
+  }
+
   return (
-    <div className="workspace">
+    <div
+      className={`workspace${isDragging ? ' drag-over' : ''}`}
+      onDragOver={handleDragOver}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <div className="workspace-main">
         <div className="hero-card stack-lg">
           <div className="workspace-header">

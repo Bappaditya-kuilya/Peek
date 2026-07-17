@@ -1,20 +1,18 @@
 /*
- * Peek — Nike-style editorial design system.
+ * Peek — refined minimal design system.
  *
- * Photography speaks, the chrome doesn't: pure black/white/single-gray UI,
- * pill geometry on every CTA, flat zero-radius cards with hairline dividers,
- * one towering uppercase Bebas display tier reserved for the campaign hero, and
- * an 8px spacing scale that keeps everything mathematically aligned. Colour is
- * spent only on the few moments that must signal (danger red, success green).
+ * Clean, modern aesthetic with subtle depth. Monochrome base with a single
+ * accent color for primary actions. Rounded panels with soft shadows,
+ * pill CTAs, and a towering uppercase Bebas display tier for the hero.
  */
 
 :root {
   /* Brand & surface */
   --ink: #111111;
   --canvas: #ffffff;
-  --soft-cloud: #f5f5f5;
-  --hairline: #cacacb;
-  --hairline-soft: #e5e5e5;
+  --soft-cloud: #f7f7f8;
+  --hairline: #e0e0e2;
+  --hairline-soft: #ebebed;
 
   /* Text */
   --charcoal: #39393b;
@@ -22,14 +20,23 @@
   --mute: #707072;
   --stone: #9e9ea0;
 
-  /* Semantic — the only chromatic energy in the chrome */
+  /* Semantic */
   --sale: #d30005;
   --sale-deep: #780700;
   --success: #007d48;
   --success-bright: #1eaa52;
   --info: #1151ff;
 
-  /* Compatibility aliases (older class hooks) */
+  /* Accent — single chromatic pop for primary actions */
+  --accent: #111111;
+  --accent-hover: #000000;
+
+  /* Surfaces */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.08);
+
+  /* Compatibility aliases */
   --bg: var(--canvas);
   --surface: var(--canvas);
   --surface-muted: var(--soft-cloud);
@@ -38,7 +45,6 @@
   --text: var(--ink);
   --text-muted: var(--mute);
   --text-faint: var(--stone);
-  --accent: var(--ink);
   --danger: var(--sale);
   --warning: var(--charcoal);
 
@@ -54,15 +60,13 @@
   --space-12: 48px;
   --space-16: 64px;
 
-  /* Radius — pills everywhere, cards at zero */
+  /* Radius */
   --radius-none: 0px;
-  --radius-input: 16px;
-  --radius-md: 24px;
-  --radius-lg: 30px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 24px;
   --radius-full: 9999px;
-  /* legacy aliases */
-  --radius-sm: 0px;
-  --radius-xl: 0px;
+  --radius-input: 12px;
 
   --duration-fast: 120ms;
   --duration-base: 200ms;
@@ -167,6 +171,12 @@ textarea:focus-visible {
   animation: screen-enter var(--duration-base) var(--ease);
 }
 
+.workspace.drag-over {
+  outline: 2px dashed var(--ink);
+  outline-offset: 4px;
+  border-radius: var(--radius-md);
+}
+
 .workspace-main,
 .workspace-side {
   display: flex;
@@ -174,7 +184,7 @@ textarea:focus-visible {
   gap: var(--space-12);
 }
 
-/* Flat containers — no shadow, no blur, hairline only. */
+/* Flat containers — subtle shadow, rounded corners. */
 .workspace-shell,
 .panel,
 .metric-strip,
@@ -186,7 +196,8 @@ textarea:focus-visible {
 .empty-panel {
   background: var(--canvas);
   border: 1px solid var(--hairline);
-  border-radius: var(--radius-none);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
 }
 
 .workspace-shell {
@@ -200,14 +211,15 @@ textarea:focus-visible {
   padding: var(--space-6);
 }
 
-/* The campaign hero — the brand's signature editorial unit, staged on cloud. */
+/* The campaign hero — the brand's signature unit, staged on cloud. */
 .hero-card {
   position: relative;
   overflow: hidden;
   padding: var(--space-12) var(--space-10);
   background: var(--soft-cloud);
   border: 1px solid var(--hairline);
-  border-radius: var(--radius-none);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
 }
 
 .workspace-header {
@@ -350,9 +362,8 @@ textarea:focus-visible {
 
 /* ------------------------------------------------------------- Buttons */
 /*
- * Pill or icon-circular — that is the entire button shape vocabulary.
- * Two-tone hierarchy: button-primary (ink) vs button-secondary (cloud).
- * Pressed state is Nike's signature "tap collapse" (scale + fade).
+ * Pill geometry for CTAs. Two-tone hierarchy: button-primary (ink) vs
+ * button-secondary (cloud). Pressed state is a subtle tap collapse.
  */
 
 .button-primary,
@@ -363,7 +374,7 @@ textarea:focus-visible {
   justify-content: center;
   min-height: 48px;
   padding: 0 var(--space-8);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-full);
   font-size: 16px;
   font-weight: 500;
   text-align: center;
@@ -372,21 +383,40 @@ textarea:focus-visible {
 .button-primary {
   background: var(--ink);
   color: var(--canvas);
+  box-shadow: var(--shadow-sm);
+}
+
+.button-primary:hover {
+  background: var(--accent-hover);
+  box-shadow: var(--shadow-md);
 }
 
 .button-secondary {
   background: var(--soft-cloud);
   color: var(--ink);
+  border: 1px solid var(--hairline);
+}
+
+.button-secondary:hover {
+  background: var(--canvas);
+  border-color: var(--ink);
 }
 
 .button-danger {
   background: var(--soft-cloud);
   color: var(--sale);
+  border: 1px solid var(--hairline);
+}
+
+.button-danger:hover {
+  background: #fef2f2;
+  border-color: var(--sale);
 }
 
 .button-danger.confirm {
   background: var(--sale);
   color: var(--canvas);
+  border-color: var(--sale);
 }
 
 .button-primary:active:enabled,
@@ -414,7 +444,7 @@ textarea:focus-visible {
   justify-content: center;
   min-height: 40px;
   padding: 0 var(--space-5);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-full);
   font-size: 14px;
   font-weight: 500;
   text-decoration: none;
@@ -460,7 +490,7 @@ textarea:focus-visible {
 }
 
 /* ------------------------------------------------------------- Banners */
-/* Flat, neutral, with a single hairline accent bar — no colour fills. */
+/* Clean banners with accent bar. */
 
 .notice-banner {
   padding: var(--space-4) var(--space-5);
@@ -468,6 +498,7 @@ textarea:focus-visible {
   border: 1px solid var(--hairline);
   border-left-width: 3px;
   border-left-color: var(--ink);
+  border-radius: var(--radius-sm);
   color: var(--ink);
   font-size: 14px;
   line-height: 1.5;
@@ -478,7 +509,7 @@ textarea:focus-visible {
 }
 
 .notice-banner.danger {
-  background: var(--canvas);
+  background: #fef2f2;
   border-left-color: var(--sale);
   color: var(--sale);
 }
@@ -601,6 +632,7 @@ textarea:focus-visible {
   min-height: 64px;
   padding: 0 var(--space-5);
   border-bottom: 1px solid var(--hairline-soft);
+  transition: background var(--duration-fast) var(--ease);
 }
 
 .file-row:last-child {
@@ -714,8 +746,7 @@ textarea:focus-visible {
 }
 
 /* --------------------------------------------------------------- Pills */
-/* Status pills mirror the filter-chip: neutral by default, fully inverted
- * (ink fill, white text) when the session is live. */
+/* Status pills — neutral by default, inverted when live. */
 
 .status-pill {
   display: inline-flex;
@@ -724,7 +755,7 @@ textarea:focus-visible {
   min-height: 34px;
   padding: 0 var(--space-5);
   border-radius: var(--radius-full);
-  background: var(--canvas);
+  background: var(--soft-cloud);
   border: 1px solid var(--hairline);
   font-size: 12px;
   font-weight: 600;
@@ -737,6 +768,7 @@ textarea:focus-visible {
   background: var(--ink);
   border-color: var(--ink);
   color: var(--canvas);
+  box-shadow: var(--shadow-sm);
 }
 
 .status-pill.waiting {
@@ -745,7 +777,7 @@ textarea:focus-visible {
 }
 
 .status-pill.danger {
-  background: var(--canvas);
+  background: #fef2f2;
   border-color: var(--sale);
   color: var(--sale);
 }
@@ -791,9 +823,10 @@ textarea:focus-visible {
   aspect-ratio: 1 / 1;
   margin: 0 auto;
   padding: var(--space-5);
-  border-radius: var(--radius-none);
+  border-radius: var(--radius-md);
   border: 1px solid var(--hairline);
   background: var(--canvas);
+  box-shadow: var(--shadow-sm);
 }
 
 .qr-frame img {
@@ -835,6 +868,7 @@ textarea:focus-visible {
   border-radius: var(--radius-input);
   background: var(--soft-cloud);
   color: var(--ink);
+  transition: all var(--duration-fast) var(--ease);
 }
 
 .clipboard-textarea,
@@ -854,6 +888,7 @@ textarea:focus-visible {
   background: var(--canvas);
   border-color: var(--ink);
   border-width: 2px;
+  box-shadow: var(--shadow-sm);
 }
 
 .clipboard-textarea {
@@ -897,7 +932,7 @@ textarea:focus-visible {
 
 .view-link-output {
   padding: var(--space-5);
-  border-radius: var(--radius-none);
+  border-radius: var(--radius-sm);
   border: 1px solid var(--hairline);
   background: var(--soft-cloud);
   overflow-wrap: anywhere;
@@ -932,14 +967,16 @@ textarea:focus-visible {
   display: flex;
   justify-content: center;
   align-items: center;
-  border: 1px dashed var(--hairline);
-  border-radius: var(--radius-none);
+  border: 2px dashed var(--hairline);
+  border-radius: var(--radius-md);
   background: var(--soft-cloud);
   text-align: center;
+  transition: all var(--duration-fast) var(--ease);
 }
 
 .receive-dropzone:hover {
   border-color: var(--ink);
+  background: var(--canvas);
 }
 
 .receive-dropzone strong {
@@ -978,6 +1015,10 @@ textarea:focus-visible {
   color: var(--sale);
 }
 
+.numeric-input:focus {
+  box-shadow: var(--shadow-md);
+}
+
 /* ------------------------------------------------------------- Misc */
 
 .empty-state {
@@ -1006,7 +1047,7 @@ textarea:focus-visible {
 @keyframes screen-enter {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(12px);
   }
   to {
     opacity: 1;

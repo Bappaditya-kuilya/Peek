@@ -11,6 +11,16 @@ interface Session {
 	fileCount: number;
 }
 
+interface ViewEntry {
+	id: string;
+	blob: ArrayBuffer;
+	filename: string;
+	mimeType: string;
+	expiresAt: number;
+	onceOnly: boolean;
+	viewed: boolean;
+}
+
 interface WebSocketAttachment {
 	sessionId: string;
 	role: "initiator" | "joiner";
@@ -31,52 +41,81 @@ export class PeekSession {
 
 	async fetch(request: Request): Promise<Response> {
 		const upgradeHeader = request.headers.get("Upgrade");
+		const origin = request.headers.get("Origin");
 		if (upgradeHeader !== "websocket") {
-			return this.handleHttp(request);
+			const response = await this.handleHttp(request);
+			addCorsHeaders(response.headers, origin);
+			return response;
 		}
 
-		// Force HTTP/1.1 for WebSocket upgrades (required for WebSocket upgrade)
 		const responseHeaders = new Headers();
 		responseHeaders.set("Connection", "Upgrade");
 		responseHeaders.set("Upgrade", "websocket");
 		responseHeaders.set("Sec-WebSocket-Accept", await this.computeAcceptKey(request.headers.get("Sec-WebSocket-Key") || ""));
+		addCorsHeaders(responseHeaders, origin);
 
 		const [client, server] = Object.values(new WebSocketPair());
-		this.state.acceptWebSocket(server);
-
-		// Attach metadata via Hibernation API (survives hibernation)
 		server.serializeAttachment({ sessionId: "", role: "initiator" });
-
-		server.addEventListener("message", (event: MessageEvent) => {
-			this.handleMessage(server, event.data);
-		});
-
-		server.addEventListener("close", () => {
-			this.handleClose(server);
-		});
+		this.state.acceptWebSocket(server);
 
 		return new Response(null, { status: 101, headers: responseHeaders, webSocket: client });
 	}
 
-	private async handleHttp(request: Request): Promise<Response> {
-		const url2 = new URL(request.url);
-
-		if (request.method === "POST" && url2.pathname === "/session") {
-			return this.createSession(request);
+	async webSocketMessage(ws: WebSocket, data: string | ArrayBuffer): Promise<void> {
+		if (typeof data === "string") {
+			await this.handleJsonMessage(ws, data);
+		} else {
+			await this.handleBinaryMessage(ws, data);
 		}
-		if (request.method === "DELETE" && url2.pathname.startsWith("/session/")) {
-			return this.killSession(request);
-		}
-		if (request.method === "GET" && url2.pathname === "/health") {
-			return new Response(JSON.stringify({ ok: true }), {
-				headers: { "Content-Type": "application/json" },
-			});
-		}
-
-		return new Response("Not found", { status: 404 });
 	}
 
-	// ---------- Session Management ----------
+	async webSocketClose(ws: WebSocket): Promise<void> {
+		const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+		if (!attachment || !attachment.sessionId) return;
+
+		const peerRole = attachment.role === "initiator" ? "joiner" : "initiator";
+		const peerWs = await this.getRoleWebSocket(attachment.sessionId, peerRole);
+		if (peerWs && peerWs.readyState === WebSocket.OPEN) {
+			peerWs.send(JSON.stringify({ type: "peer-disconnected" }));
+		}
+	}
+
+	private async handleHttp(request: Request): Promise<Response> {
+		const url2 = new URL(request.url);
+		const origin = request.headers.get("Origin");
+
+		if (request.method === "POST" && url2.pathname === "/session") {
+			const response = await this.createSession(request);
+			addCorsHeaders(response.headers, origin);
+			return response;
+		}
+		if (request.method === "DELETE" && url2.pathname.startsWith("/session/")) {
+			const response = await this.killSession(request);
+			addCorsHeaders(response.headers, origin);
+			return response;
+		}
+		if (request.method === "POST" && url2.pathname === "/view") {
+			const response = await this.createView(request);
+			addCorsHeaders(response.headers, origin);
+			return response;
+		}
+		if (request.method === "GET" && url2.pathname.startsWith("/view/")) {
+			const response = await this.getView(request);
+			addCorsHeaders(response.headers, origin);
+			return response;
+		}
+		if (request.method === "GET" && url2.pathname === "/health") {
+			const response = new Response(JSON.stringify({ ok: true }), {
+				headers: { "Content-Type": "application/json" },
+			});
+			addCorsHeaders(response.headers, origin);
+			return response;
+		}
+
+		const response = new Response("Not found", { status: 404 });
+		addCorsHeaders(response.headers, origin);
+		return response;
+	}
 
 	private async createSession(request: Request): Promise<Response> {
 		try {
@@ -91,7 +130,7 @@ export class PeekSession {
 			globalThis.crypto.getRandomValues(tokenBytes);
 			const token = Array.from(tokenBytes, b => b.toString(16).padStart(2, '0')).join('');
 
-			const session = {
+			const session: Session = {
 				id: sessionId,
 				token,
 				expiresAt: Date.now() + 60 * 60 * 1000,
@@ -104,7 +143,7 @@ export class PeekSession {
 			await this.state.storage.put(`session_token:${token}`, sessionId);
 
 			return new Response(
-				JSON.stringify({ sessionId, token, expiresAt: Date.now() + 60 * 60 * 1000 }),
+				JSON.stringify({ sessionId, token, expiresAt: session.expiresAt }),
 				{ headers: { "Content-Type": "application/json" } }
 			);
 		} catch (e) {
@@ -131,6 +170,78 @@ export class PeekSession {
 		});
 	}
 
+	private async createView(request: Request): Promise<Response> {
+		try {
+			const expiresIn = Math.max(1, Math.min(120, Number(request.headers.get("X-Expires-In") || "15")));
+			const filename = request.headers.get("X-Filename") || "peek-file";
+			const mimeType = request.headers.get("X-Mime-Type") || "application/octet-stream";
+			const onceOnly = request.headers.get("X-Once-Only") === "true";
+			const blob = await request.arrayBuffer();
+
+			if (!blob || blob.byteLength === 0) {
+				return new Response(JSON.stringify({ error: "Empty body" }), { status: 400 });
+			}
+
+			const viewIdBytes = new Uint8Array(8);
+			globalThis.crypto.getRandomValues(viewIdBytes);
+			const viewId = Array.from(viewIdBytes, b => b.toString(16).padStart(2, '0')).join('');
+
+			const entry: ViewEntry = {
+				id: viewId,
+				blob,
+				filename,
+				mimeType,
+				expiresAt: Date.now() + expiresIn * 60 * 1000,
+				onceOnly,
+				viewed: false,
+			};
+
+			await this.state.storage.put(`view:${viewId}`, entry);
+
+			return new Response(
+				JSON.stringify({ id: viewId }),
+				{ headers: { "Content-Type": "application/json" } }
+			);
+		} catch (e) {
+			return new Response(JSON.stringify({ error: String(e) }), { status: 500 });
+		}
+	}
+
+	private async getView(request: Request): Promise<Response> {
+		const viewId = new URL(request.url).pathname.split("/")[2];
+		if (!viewId || !/^[a-f0-9]{16}$/i.test(viewId)) {
+			return new Response("Invalid view ID", { status: 400 });
+		}
+
+		const entry = await this.state.storage.get<ViewEntry>(`view:${viewId}`);
+		if (!entry) {
+			return new Response(JSON.stringify({ error: "Not found" }), { status: 410 });
+		}
+
+		if (entry.expiresAt < Date.now()) {
+			await this.state.storage.delete(`view:${viewId}`);
+			return new Response(JSON.stringify({ error: "Expired" }), { status: 410 });
+		}
+
+		if (entry.onceOnly && entry.viewed) {
+			await this.state.storage.delete(`view:${viewId}`);
+			return new Response(JSON.stringify({ error: "Already viewed" }), { status: 410 });
+		}
+
+		if (entry.onceOnly) {
+			await this.state.storage.put(`view:${viewId}`, { ...entry, viewed: true });
+		}
+
+		return new Response(entry.blob, {
+			headers: {
+				"Content-Type": "application/octet-stream",
+				"X-Expires-At": String(entry.expiresAt),
+				"X-Filename": entry.filename,
+				"X-Mime-Type": entry.mimeType,
+			},
+		});
+	}
+
 	private async getSession(sessionId: string) {
 		const session = await this.state.storage.get<Session>(`session:${sessionId}`);
 		if (!session) return null;
@@ -152,18 +263,24 @@ export class PeekSession {
 			await this.state.storage.delete(`session_token:${session.token}`);
 		}
 		await this.state.storage.delete(`session:${sessionId}`);
-		await this.state.storage.delete(`ws:initiator:${sessionId}`);
-		await this.state.storage.delete(`ws:joiner:${sessionId}`);
 	}
 
-	// ---------- WebSocket Signaling ----------
-
-	handleMessage(ws: WebSocket, data: string | ArrayBuffer): void {
-		if (typeof data === "string") {
-			this.handleJsonMessage(ws, data);
-		} else {
-			this.handleBinaryMessage(ws, data);
+	private getRoleWebSocket(sessionId: string, role: "initiator" | "joiner"): WebSocket | null {
+		const websockets = this.state.getWebSockets();
+		for (const ws of websockets) {
+			const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+			if (attachment && attachment.sessionId === sessionId && attachment.role === role && ws.readyState === WebSocket.OPEN) {
+				return ws;
+			}
 		}
+		return null;
+	}
+
+	private getPeerWs(ws: WebSocket): WebSocket | null {
+		const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+		if (!attachment || !attachment.sessionId) return null;
+		const peerRole = attachment.role === "initiator" ? "joiner" : "initiator";
+		return this.getRoleWebSocket(attachment.sessionId, peerRole);
 	}
 
 	async handleJsonMessage(ws: WebSocket, text: string): Promise<void> {
@@ -210,21 +327,12 @@ export class PeekSession {
 			return;
 		}
 
-		// Handle reconnection: replace existing socket for this role
-		const existingWs = await this.getRoleWebSocket(message.sessionId, role);
+		const existingWs = this.getRoleWebSocket(message.sessionId, role);
 		if (existingWs && existingWs !== ws) {
 			existingWs.close(4005, "Replaced by reconnect");
 		}
 
-		// Store WebSocket reference via Hibernation API attachment (survives hibernation)
 		ws.serializeAttachment({ sessionId: message.sessionId, role });
-
-		// Store reference in DO storage for peer lookup
-		await this.setRoleWebSocket(message.sessionId, role, ws);
-
-		// Mark role as joined in session
-		// session already fetched above at line 185
-		if (!session) return;
 
 		if (role === "initiator") {
 			await this.state.storage.put(`session:${message.sessionId}`, {
@@ -244,81 +352,72 @@ export class PeekSession {
 			? (role === "initiator" ? sessionInfo.joinerJoinedAt : sessionInfo.initiatorJoinedAt)
 			: null;
 
-		this.sendJson(ws, { type: `${role}-ready`, expiresAt: session?.expiresAt });
+		this.sendJson(ws, { type: `${role}-ready`, expiresAt: session.expiresAt });
 		if (peerJoinedAt) {
 			this.sendJson(ws, { type: "peer-connected", role: peerRole });
 		}
 
-		// Notify peer
-		const peerWs = await this.getRoleWebSocket(message.sessionId, role === "initiator" ? "joiner" : "initiator");
+		const peerWs = this.getRoleWebSocket(message.sessionId, peerRole);
 		if (peerWs) {
 			peerWs.send(JSON.stringify({ type: "peer-connected", role }));
 		}
 	}
 
 	async relayToPeer(ws: WebSocket, message: any): Promise<void> {
-		const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
-		if (!attachment) return;
-
-		const peerRole = attachment.role === "initiator" ? "joiner" : "initiator";
-		const peerWs = await this.getRoleWebSocket(attachment.sessionId, peerRole);
+		const peerWs = this.getPeerWs(ws);
 		if (peerWs && peerWs.readyState === WebSocket.OPEN) {
 			peerWs.send(JSON.stringify(message));
 		}
 	}
 
-	handleClose(ws: WebSocket): void {
-		const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
-		if (!attachment) return;
-
-		const peerRole = attachment.role === "initiator" ? "joiner" : "initiator";
-		const peerWs = this.getRoleWebSocket(attachment.sessionId, peerRole);
-		if (peerWs) {
-			peerWs.then((pws) => {
-				if (pws && pws.readyState === WebSocket.OPEN) {
-					pws.send(JSON.stringify({ type: "peer-disconnected" }));
-				}
-			});
-		}
-	}
-
-	// ---------- Binary Data Relay ----------
-
 	async handleBinaryMessage(ws: WebSocket, data: ArrayBuffer): Promise<void> {
-		const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
-		if (!attachment) return;
-
-		const peerRole = attachment.role === "initiator" ? "joiner" : "initiator";
-		const peerWs = await this.getRoleWebSocket(attachment.sessionId, attachment.role === "initiator" ? "joiner" : "initiator");
+		const peerWs = this.getPeerWs(ws);
 		if (peerWs && peerWs.readyState === WebSocket.OPEN) {
 			peerWs.send(data);
 		}
 	}
-
-	// ---------- WebSocket Helpers ----------
 
 	private sendJson(ws: WebSocket, payload: object): void {
 		if (ws.readyState === WebSocket.OPEN) {
 			ws.send(JSON.stringify(payload));
 		}
 	}
+}
 
-	async getRoleWebSocket(sessionId: string, role: "initiator" | "joiner"): Promise<WebSocket | null> {
-		const ws = await this.state.storage.get<WebSocket>(`ws:${role}:${sessionId}`);
-		return ws || null;
-	}
+function corsHeaders(origin: string | null) {
+	const allowedOrigins = [
+		"https://peekapp.vercel.app",
+		"https://peek.dev",
+		"http://localhost:5173",
+		"http://127.0.0.1:5173",
+	];
+	const allowOrigin = origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+	return {
+		"Access-Control-Allow-Origin": allowOrigin,
+		"Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+		"Access-Control-Allow-Headers": "Content-Type, Authorization, X-Expires-In, X-Filename, X-Mime-Type, X-Once-Only",
+		"Access-Control-Expose-Headers": "X-Expires-At, X-Filename, X-Mime-Type",
+		"Access-Control-Max-Age": "86400",
+	};
+}
 
-	async setRoleWebSocket(sessionId: string, role: "initiator" | "joiner", ws: WebSocket): Promise<void> {
-		await this.state.storage.put(`ws:${role}:${sessionId}`, ws);
+function addCorsHeaders(headers: Headers, origin: string | null): void {
+	for (const [k, v] of Object.entries(corsHeaders(origin))) {
+		headers.set(k, v);
 	}
+}
+
+function handleOptions(request: Request): Response {
+	const origin = request.headers.get("Origin");
+	return new Response(null, { status: 204, headers: corsHeaders(origin) });
 }
 
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
-		const url = new URL(request.url);
+		if (request.method === "OPTIONS") {
+			return handleOptions(request);
+		}
 
-		// ALL requests (HTTP + WebSocket) go to the SAME "global" DO
-		// This ensures session data and WebSocket connections share the same DO instance/storage
 		const id = env.PEEK_SESSION.idFromName("global");
 		const stub = env.PEEK_SESSION.get(id);
 		return stub.fetch(request);

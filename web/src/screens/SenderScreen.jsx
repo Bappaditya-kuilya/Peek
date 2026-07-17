@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { FilePicker } from '../components/FilePicker.jsx';
 import { SenderActiveView } from './sender/SenderActiveView.jsx';
 import { SenderEndedView } from './sender/SenderEndedView.jsx';
@@ -182,6 +182,10 @@ export function SenderScreen() {
     setScreen(SCREEN_PICKER);
   }
 
+  const handleFilesDropped = useCallback((fileList) => {
+    handleFilesAdded(fileList);
+  }, []);
+
   async function handleGenerateSession() {
     if (!selectedFiles.length) return;
     setIsGenerating(true);
@@ -245,7 +249,7 @@ export function SenderScreen() {
       <div className="app-frame">
         <input ref={fileInputRef} className="hidden-input" type="file" multiple onChange={(event) => handleFilesAdded(event.target.files)} />
 
-        {screen === SCREEN_HOME ? <SenderHomeHero onStart={triggerFilePicker} /> : null}
+        {screen === SCREEN_HOME ? <SenderHomeHero onStart={triggerFilePicker} onDrop={handleFilesDropped} /> : null}
 
         {screen === SCREEN_PICKER ? (
           <FilePicker
