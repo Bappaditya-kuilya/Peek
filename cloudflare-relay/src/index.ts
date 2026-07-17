@@ -22,11 +22,24 @@ export class PeekSession {
 		private env: Env
 	) {}
 
+	private async computeAcceptKey(key: string): Promise<string> {
+		const encoder = new TextEncoder();
+		const data = encoder.encode(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11');
+		const hashBuffer = await crypto.subtle.digest('SHA-1', data);
+		return btoa(String.fromCharCode(...new Uint8Array(hashBuffer)));
+	}
+
 	async fetch(request: Request): Promise<Response> {
 		const upgradeHeader = request.headers.get("Upgrade");
 		if (upgradeHeader !== "websocket") {
 			return this.handleHttp(request);
 		}
+
+		// Force HTTP/1.1 for WebSocket upgrades (required for WebSocket upgrade)
+		const responseHeaders = new Headers();
+		responseHeaders.set("Connection", "Upgrade");
+		responseHeaders.set("Upgrade", "websocket");
+		responseHeaders.set("Sec-WebSocket-Accept", await this.computeAcceptKey(request.headers.get("Sec-WebSocket-Key") || ""));
 
 		const [client, server] = Object.values(new WebSocketPair());
 		this.state.acceptWebSocket(server);
@@ -42,19 +55,19 @@ export class PeekSession {
 			this.handleClose(server);
 		});
 
-		return new Response(null, { status: 101, webSocket: client });
+		return new Response(null, { status: 101, headers: responseHeaders, webSocket: client });
 	}
 
 	private async handleHttp(request: Request): Promise<Response> {
 		const url2 = new URL(request.url);
 
-		if (request.method === "POST" && url.pathname === "/session") {
+		if (request.method === "POST" && url2.pathname === "/session") {
 			return this.createSession(request);
 		}
-		if (request.method === "DELETE" && url.pathname.startsWith("/session/")) {
+		if (request.method === "DELETE" && url2.pathname.startsWith("/session/")) {
 			return this.killSession(request);
 		}
-		if (request.method === "GET" && url.pathname === "/health") {
+		if (request.method === "GET" && url2.pathname === "/health") {
 			return new Response(JSON.stringify({ ok: true }), {
 				headers: { "Content-Type": "application/json" },
 			});
@@ -66,28 +79,37 @@ export class PeekSession {
 	// ---------- Session Management ----------
 
 	private async createSession(request: Request): Promise<Response> {
-		const body = await request.json().catch(() => ({}));
-		const fileCount = Math.max(0, Math.min(500, Number(body?.fileCount || 0)));
+		try {
+			const body = await request.json().catch(() => ({}));
+			const fileCount = Math.max(0, Math.min(500, Number(body?.fileCount || 0)));
 
-		const sessionId = crypto.randomBytes(8).toString("hex");
-		const token = crypto.randomBytes(32).toString("hex");
-		const now = Date.now();
-		const session = {
-			id: sessionId,
-			token,
-			expiresAt: Date.now() + 60 * 60 * 1000,
-			initiatorJoinedAt: null,
-			joinerJoinedAt: null,
-			fileCount,
-		};
+			const sessionIdBytes = new Uint8Array(8);
+			globalThis.crypto.getRandomValues(sessionIdBytes);
+			const sessionId = Array.from(sessionIdBytes, b => b.toString(16).padStart(2, '0')).join('');
 
-		await this.state.storage.put(`session:${sessionId}`, session);
-		await this.state.storage.put(`session_token:${token}`, sessionId);
+			const tokenBytes = new Uint8Array(32);
+			globalThis.crypto.getRandomValues(tokenBytes);
+			const token = Array.from(tokenBytes, b => b.toString(16).padStart(2, '0')).join('');
 
-		return new Response(
-			JSON.stringify({ sessionId, token, expiresAt: session.expiresAt }),
-			{ headers: { "Content-Type": "application/json" } }
-		);
+			const session = {
+				id: sessionId,
+				token,
+				expiresAt: Date.now() + 60 * 60 * 1000,
+				initiatorJoinedAt: null,
+				joinerJoinedAt: null,
+				fileCount,
+			};
+
+			await this.state.storage.put(`session:${sessionId}`, session);
+			await this.state.storage.put(`session_token:${token}`, sessionId);
+
+			return new Response(
+				JSON.stringify({ sessionId, token, expiresAt: Date.now() + 60 * 60 * 1000 }),
+				{ headers: { "Content-Type": "application/json" } }
+			);
+		} catch (e) {
+			return new Response(JSON.stringify({ error: String(e) }), { status: 500 });
+		}
 	}
 
 	private async killSession(request: Request): Promise<Response> {
@@ -295,26 +317,9 @@ export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		const url = new URL(request.url);
 
-		// HTTP endpoints - use a single "global" DO for session management
-		if (request.method === "POST" && url.pathname === "/session") {
-			const id = env.PEEK_SESSION.idFromName("global");
-			const stub = env.PEEK_SESSION.get(id);
-			return stub.fetch(request);
-		}
-		if (request.method === "DELETE" && url.pathname.startsWith("/session/")) {
-			const id = env.PEEK_SESSION.idFromName("global");
-			const stub = env.PEEK_SESSION.get(id);
-			return stub.fetch(request);
-		}
-		if (url.pathname === "/health") {
-			return new Response(JSON.stringify({ ok: true }), {
-				headers: { "Content-Type": "application/json" },
-			});
-		}
-
-		// WebSocket connections - route by session ID for isolation
-		const sessionId = url.pathname.split("/")[2] || "global";
-		const id = env.PEEK_SESSION.idFromName(sessionId);
+		// ALL requests (HTTP + WebSocket) go to the SAME "global" DO
+		// This ensures session data and WebSocket connections share the same DO instance/storage
+		const id = env.PEEK_SESSION.idFromName("global");
 		const stub = env.PEEK_SESSION.get(id);
 		return stub.fetch(request);
 	},
