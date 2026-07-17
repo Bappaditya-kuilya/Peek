@@ -46,7 +46,25 @@ function getIceServers() {
     return DEV_ICE_SERVERS;
   }
 
-  return stunServers;
+  // Production fallback: openrelay.metered.ca as last resort when no Cloudflare TURN configured
+  return [
+    ...stunServers,
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+  ];
 }
 
 export function useWebRTC({

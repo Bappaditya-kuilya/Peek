@@ -1,0 +1,19 @@
+{
+  "name": "cloudflare-relay",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8787",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.18.5",
+    "@cloudflare/workers-types": "^5.20260717.1",
+    "miniflare": "^4.20260710.0",
+    "vitest": "^3.2.0",
+    "wrangler": "^4.111.0"
+  }
+}

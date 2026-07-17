@@ -1,0 +1,14 @@
+name: Keep Relay Alive
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping relay /health
+        run: |
+          curl -fsS --max-time 10 https://peek-relay.onrender.com/health || exit 1
