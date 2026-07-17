@@ -1,10 +1,11 @@
 {
   "name": "peek",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "install:web": "npm --prefix web install",
     "build": "npm --prefix web run build",
     "test:relay": "node --test relay/tests/*.test.js",
-    "test": "npm run test:relay && npm run build"
+    "test": "npm run test:relay && npm --prefix web run test && npm run build"
   }
 }
