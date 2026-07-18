@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FilePicker } from '../components/FilePicker.jsx';
 import { SenderActiveView } from './sender/SenderActiveView.jsx';
 import { SenderEndedView } from './sender/SenderEndedView.jsx';
@@ -72,6 +72,26 @@ export function SenderScreen() {
   const nextFileIdRef = useRef(0);
   const transferStartedRef = useRef(transferStarted);
   transferStartedRef.current = transferStarted;
+  const thumbnailUrlsRef = useRef({});
+
+  useEffect(() => {
+    const currentIds = new Set(selectedFiles.map((f) => f.id));
+    Object.keys(thumbnailUrlsRef.current).forEach((id) => {
+      if (!currentIds.has(Number(id))) {
+        URL.revokeObjectURL(thumbnailUrlsRef.current[id]);
+        delete thumbnailUrlsRef.current[id];
+      }
+    });
+    selectedFiles.forEach((entry) => {
+      if (!thumbnailUrlsRef.current[entry.id] && entry.file?.type?.startsWith('image/')) {
+        thumbnailUrlsRef.current[entry.id] = URL.createObjectURL(entry.file);
+      }
+    });
+    return () => {
+      Object.values(thumbnailUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
+      thumbnailUrlsRef.current = {};
+    };
+  }, [selectedFiles]);
 
   function addActivity(fileName) {
     setActivity((current) => [
@@ -257,9 +277,11 @@ export function SenderScreen() {
             isGenerating={isGenerating}
             onAddFiles={triggerFilePicker}
             onBack={() => setScreen(SCREEN_HOME)}
+            onDrop={handleFilesDropped}
             onGenerate={handleGenerateSession}
             onRemoveFile={handleRemoveFile}
             statusMessage={statusMessage}
+            thumbnailUrls={thumbnailUrlsRef.current}
           />
         ) : null}
 

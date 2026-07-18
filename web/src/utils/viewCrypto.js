@@ -14,6 +14,12 @@ const PREVIEWABLE_MIME_TYPES = new Set([
   'image/png',
   'image/gif',
   'image/webp',
+  'text/plain',
+  'text/markdown',
+  'text/csv',
+  'video/mp4',
+  'video/webm',
+  'video/ogg',
 ]);
 
 export function normalizePeekMimeType(file) {

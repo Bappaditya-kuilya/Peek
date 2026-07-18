@@ -16,6 +16,12 @@ const PREVIEWABLE_TYPES = new Set([
   'image/png',
   'image/gif',
   'image/webp',
+  'text/plain',
+  'text/markdown',
+  'text/csv',
+  'video/mp4',
+  'video/webm',
+  'video/ogg',
 ]);
 
 function normalizeMimeType(mimeType = '') {
@@ -110,13 +116,98 @@ async function renderImage(blob) {
   return img;
 }
 
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function renderText(blob) {
+  return blob.text().then((text) => {
+    const pre = document.createElement('pre');
+    pre.className = 'text-preview';
+    pre.textContent = text;
+    pre.style.cssText = 'margin:0;padding:18px;background:#f7f7f8;border-radius:12px;overflow:auto;font-family:var(--font-mono);font-size:14px;line-height:1.6;white-space:pre-wrap;word-break:break-word;';
+    return pre;
+  });
+}
+
+function renderMarkdown(blob) {
+  return blob.text().then((text) => {
+    const container = document.createElement('div');
+    container.className = 'markdown-preview';
+    container.style.cssText = 'padding:18px;background:#f7f7f8;border-radius:12px;overflow:auto;font-size:15px;line-height:1.6;color:#111111;';
+
+    const escaped = escapeHtml(text);
+    const lines = escaped.split('\n');
+    let html = '';
+    let inCodeBlock = false;
+    let codeContent = '';
+
+    for (const line of lines) {
+      if (line.startsWith('```')) {
+        if (inCodeBlock) {
+          html += '<pre style="margin:12px 0;padding:12px;background:#ebebed;border-radius:8px;overflow:auto;font-size:13px;line-height:1.5;">' + codeContent + '</pre>';
+          codeContent = '';
+          inCodeBlock = false;
+        } else {
+          inCodeBlock = true;
+        }
+        continue;
+      }
+      if (inCodeBlock) {
+        codeContent += line + '\n';
+        continue;
+      }
+      if (line.startsWith('# ')) {
+        html += '<h1 style="margin:16px 0 8px;font-size:24px;font-weight:600;">' + line.slice(2) + '</h1>';
+      } else if (line.startsWith('## ')) {
+        html += '<h2 style="margin:14px 0 6px;font-size:20px;font-weight:600;">' + line.slice(3) + '</h2>';
+      } else if (line.startsWith('### ')) {
+        html += '<h3 style="margin:12px 0 4px;font-size:17px;font-weight:600;">' + line.slice(4) + '</h3>';
+      } else if (line.startsWith('- ') || line.startsWith('* ')) {
+        html += '<div style="margin:2px 0;padding-left:16px;">• ' + line.slice(2) + '</div>';
+      } else if (line.match(/^\d+\. /)) {
+        html += '<div style="margin:2px 0;padding-left:16px;">' + line + '</div>';
+      } else if (line.startsWith('> ')) {
+        html += '<div style="margin:4px 0;padding:8px 12px;border-left:3px solid #cacacb;color:#707072;font-style:italic;">' + line.slice(2) + '</div>';
+      } else if (line.trim() === '') {
+        html += '<br>';
+      } else {
+        let formatted = line
+          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+          .replace(/\*(.+?)\*/g, '<em>$1</em>')
+          .replace(/`(.+?)`/g, '<code style="padding:2px 6px;background:#ebebed;border-radius:4px;font-size:13px;">$1</code>');
+        html += '<p style="margin:4px 0;">' + formatted + '</p>';
+      }
+    }
+    if (inCodeBlock && codeContent) {
+      html += '<pre style="margin:12px 0;padding:12px;background:#ebebed;border-radius:8px;overflow:auto;font-size:13px;line-height:1.5;">' + codeContent + '</pre>';
+    }
+    container.innerHTML = html;
+    return container;
+  });
+}
+
+function renderVideo(blob, mimeType) {
+  const videoUrl = URL.createObjectURL(blob);
+  const video = document.createElement('video');
+  video.src = videoUrl;
+  video.controls = true;
+  video.style.cssText = 'display:block;max-width:100%;max-height:80vh;margin:0 auto;border-radius:12px;';
+  video.addEventListener('loadeddata', () => {
+    window.setTimeout(() => URL.revokeObjectURL(videoUrl), 10000);
+  }, { once: true });
+  return video;
+}
+
 function renderDownload(blob, filename) {
   const wrapper = document.createElement('div');
   wrapper.className = 'download-block';
 
   const note = document.createElement('div');
   note.className = 'meta';
-  note.textContent = 'This file type cannot be previewed in the browser. It stays encrypted until you save it.';
+  note.textContent = 'This file type cannot be previewed in the browser. Download it to view the content.';
 
   const objectUrl = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
@@ -209,6 +300,12 @@ async function main() {
       viewerNode.appendChild(await renderPdf(blob));
     } else if (mimeType.startsWith('image/')) {
       viewerNode.appendChild(await renderImage(blob));
+    } else if (mimeType === 'text/markdown') {
+      viewerNode.appendChild(await renderMarkdown(blob));
+    } else if (mimeType === 'text/plain' || mimeType === 'text/csv') {
+      viewerNode.appendChild(await renderText(blob));
+    } else if (mimeType.startsWith('video/')) {
+      viewerNode.appendChild(renderVideo(blob, mimeType));
     } else {
       viewerNode.appendChild(renderDownload(blob, filename));
     }

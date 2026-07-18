@@ -92,6 +92,7 @@ export function SenderActiveView({
           <ReceivePanel
             files={receivedFiles}
             onDownload={onDownload}
+            onDrop={onSendBack}
             onSelectFiles={() => sendBackInputRef.current?.click()}
             sessionId={session.sessionId}
             title="Files received"

@@ -991,6 +991,17 @@ textarea:focus-visible {
   font-size: 14px;
 }
 
+.receive-dropzone.drag-over {
+  border-color: var(--ink);
+  background: var(--canvas);
+}
+
+.file-table.drag-over {
+  outline: 2px dashed var(--ink);
+  outline-offset: 2px;
+  border-radius: var(--radius-md);
+}
+
 /* ------------------------------------------------------ Numeric input */
 
 .numeric-input-shell {
