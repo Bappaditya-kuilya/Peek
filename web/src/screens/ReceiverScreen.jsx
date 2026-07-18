@@ -252,6 +252,7 @@ export function ReceiverScreen() {
               <ReceivePanel
                 files={outgoingFiles}
                 onDownload={() => {}}
+                onDrop={handleSendBackFiles}
                 onSelectFiles={() => sendBackInputRef.current?.click()}
                 sessionId={sessionId}
                 title="Send files back"

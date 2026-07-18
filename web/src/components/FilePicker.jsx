@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ErrorBanner } from './ErrorBanner.jsx';
 import { FileRow } from './FileRow.jsx';
 import { Watermark } from './Watermark.jsx';
@@ -8,11 +9,41 @@ export function FilePicker({
   isGenerating = false,
   onAddFiles,
   onBack,
+  onDrop,
   onGenerate,
   onRemoveFile,
   statusMessage = '',
+  thumbnailUrls = {},
 }) {
   const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+  const [isDragging, setIsDragging] = useState(false);
+
+  function handleDragOver(event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function handleDragEnter(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragging(true);
+  }
+
+  function handleDragLeave(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragging(false);
+  }
+
+  function handleDrop(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragging(false);
+    const droppedFiles = event.dataTransfer?.files;
+    if (droppedFiles?.length) {
+      onDrop?.(droppedFiles);
+    }
+  }
 
   return (
     <div className="workspace">
@@ -32,14 +63,20 @@ export function FilePicker({
             </p>
           </div>
 
-          <div className="file-table">
+          <div
+            className={`file-table${isDragging ? ' drag-over' : ''}`}
+            onDragOver={handleDragOver}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
             <div className="file-table-head">
               <div className="panel-label">Selected files</div>
               <div className="panel-label">Action</div>
             </div>
             <div>
               {files.map((file) => (
-                <FileRow key={file.id} file={file} removable onRemove={onRemoveFile} />
+                <FileRow key={file.id} file={file} removable onRemove={onRemoveFile} thumbnailUrl={thumbnailUrls[file.id]} />
               ))}
             </div>
           </div>

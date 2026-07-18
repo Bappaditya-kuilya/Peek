@@ -5,6 +5,7 @@ import { downloadAllAsZip } from '../utils/zip.js';
 export function ReceivePanel({
   files,
   onDownload,
+  onDrop,
   onSelectFiles,
   sessionId,
   title,
@@ -52,7 +53,7 @@ export function ReceivePanel({
 
       <div className="stack-sm">
         <div className="panel-label">Send files back</div>
-        <FileDropzone onClick={onSelectFiles}>
+        <FileDropzone onClick={onSelectFiles} onDrop={onDrop}>
           <strong>Choose files to return</strong>
           Drop files here or click to browse
         </FileDropzone>
