@@ -31,6 +31,10 @@ interface WebSocketAttachment {
 	receiverId?: string;
 }
 
+// ponytail: per-connection in-memory message counter for rate limiting;
+// resets with the connection, no storage needed for this ceiling.
+const wsMessageCounts = new WeakMap<WebSocket, number>();
+
 export class PeekSession {
 	constructor(
 		private state: DurableObjectState,
@@ -141,6 +145,14 @@ export class PeekSession {
 
 	private async createSession(request: Request): Promise<Response> {
 		try {
+			const created = (await this.state.storage.get<number>("rate:session_create")) || 0;
+			if (created >= 10) {
+				return new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
+					status: 429,
+					headers: { "Content-Type": "application/json" },
+				});
+			}
+
 			const body = (await request.json().catch(() => ({}))) as { fileCount?: number };
 			const fileCount = Math.max(0, Math.min(500, Number(body?.fileCount || 0)));
 
@@ -163,6 +175,7 @@ export class PeekSession {
 
 			await this.state.storage.put(`session:${sessionId}`, session);
 			await this.state.storage.put(`session_token:${token}`, sessionId);
+			await this.state.storage.put("rate:session_create", created + 1);
 
 			return new Response(
 				JSON.stringify({ sessionId, token, expiresAt: session.expiresAt, fileCount: session.fileCount }),
@@ -194,7 +207,7 @@ export class PeekSession {
 
 	private async createView(request: Request): Promise<Response> {
 		try {
-			const expiresIn = Math.max(1, Math.min(120, Number(request.headers.get("X-Expires-In") || "15")));
+			const expiresIn = Math.max(0, Math.min(120, Number(request.headers.get("X-Expires-In") || "15")));
 			const filename = request.headers.get("X-Filename") || "peek-file";
 			const mimeType = request.headers.get("X-Mime-Type") || "application/octet-stream";
 			const onceOnly = request.headers.get("X-Once-Only") === "true";
@@ -336,6 +349,7 @@ export class PeekSession {
 		switch (type) {
 			case "initiator-join":
 			case "receiver-join":
+			case "joiner-join":
 				await this.handleJoin(ws, message, type === "initiator-join" ? "initiator" : "receiver");
 				break;
 			case "webrtc-offer":
@@ -343,6 +357,15 @@ export class PeekSession {
 			case "webrtc-candidate":
 			case "clipboard-push":
 			case "view-share-push":
+				const count = (wsMessageCounts.get(ws) || 0) + 1;
+				wsMessageCounts.set(ws, count);
+				if (count >= 100) {
+					// ponytail: defer close so it runs after the current message
+					// dispatch completes (workerd doesn't propagate a close fired
+					// synchronously inside the message handler to the client).
+					queueMicrotask(() => ws.close(4008, "rate limit exceeded"));
+					return;
+				}
 				await this.relaySignaling(ws, message);
 				break;
 			default:
@@ -369,7 +392,8 @@ export class PeekSession {
 		if (role === "initiator") {
 			const existingWs = this.getInitiatorWebSocket(message.sessionId);
 			if (existingWs && existingWs !== ws) {
-				existingWs.close(4005, "Replaced by reconnect");
+				// ponytail: defer so the close propagates to the client (see rate limit note)
+				queueMicrotask(() => existingWs.close(4005, "Replaced by reconnect"));
 			}
 			ws.serializeAttachment({ sessionId: message.sessionId, role: "initiator" });
 
@@ -388,7 +412,18 @@ export class PeekSession {
 			const receiverId = crypto.randomUUID();
 			const existingWs = this.getReceiverWebSocket(message.sessionId, receiverId);
 			if (existingWs && existingWs !== ws) {
-				existingWs.close(4005, "Replaced by reconnect");
+				queueMicrotask(() => existingWs.close(4005, "Replaced by reconnect"));
+			} else {
+				for (const other of this.state.getWebSockets()) {
+					const att = other.deserializeAttachment();
+					if (
+						other !== ws &&
+						att?.sessionId === message.sessionId &&
+						att?.role === "receiver"
+					) {
+						queueMicrotask(() => other.close(4005, "Replaced by reconnect"));
+					}
+				}
 			}
 			ws.serializeAttachment({ sessionId: message.sessionId, role: "receiver", receiverId });
 

@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "wrangler dev --port 8787",
     "build": "tsc",
-    "test": "vitest run",
+    "test": "vitest run --max-workers=1 --no-isolate",
     "test:watch": "vitest"
   },
   "keywords": [],
@@ -16,7 +16,6 @@
     "@cloudflare/workers-types": "^5.20260717.1",
     "miniflare": "^4.20260710.0",
     "vitest": "^4.1.10",
-    "vitest-environment-miniflare": "^2.14.4",
     "wrangler": "^4.111.0"
   }
 }
