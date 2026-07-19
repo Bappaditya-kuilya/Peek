@@ -14,6 +14,15 @@ if (sentryDsn) {
   });
 }
 
+// Register service worker in production
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(err => {
+      console.warn('Service Worker registration failed:', err);
+    });
+  });
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <Sentry.ErrorBoundary fallback={<div className="app-shell"><div className="app-frame"><div className="panel" style={{ maxWidth: 480, margin: '80px auto', textAlign: 'center' }}><h2 className="section-title">Something went wrong</h2><p className="helper-copy" style={{ marginBottom: 16 }}>An unexpected error occurred.</p><button type="button" className="button-primary" onClick={() => window.location.reload()}>Reload</button></div></div></div>}>

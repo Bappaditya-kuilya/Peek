@@ -2,7 +2,7 @@ import { CodeDisplay } from '../../components/CodeDisplay.jsx';
 import { ErrorBanner } from '../../components/ErrorBanner.jsx';
 import { Watermark } from '../../components/Watermark.jsx';
 
-export function ReceiverPendingView({ mode, statusMessage, statusDanger }) {
+export function ReceiverPendingView({ mode, statusMessage, statusDanger, connectionTrouble, onRetry }) {
   if (mode === 'missing-key') {
     return (
       <div className="app-shell">
@@ -45,6 +45,13 @@ export function ReceiverPendingView({ mode, statusMessage, statusDanger }) {
               <Watermark eyebrow="Receiver session" />
               <h1 className="section-title">Connecting to device…</h1>
               <ErrorBanner tone={statusDanger ? 'danger' : 'warning'}>{statusMessage}</ErrorBanner>
+              {connectionTrouble && (
+                <div className="stack-sm" style={{ marginTop: '16px' }}>
+                  <button type="button" className="button-primary" onClick={onRetry}>
+                    Retry connection
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

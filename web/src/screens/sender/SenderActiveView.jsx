@@ -14,8 +14,10 @@ import { getTransportLabel } from '../../shared/transport.js';
 export function SenderActiveView({
   activity,
   clipboard,
+  connectionTrouble,
   onDownload,
   onKill,
+  onRetry,
   onSendBack,
   peerConnected,
   peekLink,
@@ -55,6 +57,14 @@ export function SenderActiveView({
 
           <ErrorBanner>{statusMessage}</ErrorBanner>
           {!peerConnected ? <ErrorBanner tone="warning">Waiting for the other device to join and keep the session alive.</ErrorBanner> : null}
+          {connectionTrouble && (
+            <div className="panel stack-sm" style={{ marginTop: '12px' }}>
+              <ErrorBanner tone="warning">Connection trouble — retries exhausted.</ErrorBanner>
+              <button type="button" className="button-primary" onClick={onRetry}>
+                Retry connection
+              </button>
+            </div>
+          )}
 
           <div className="panel">
             <div className="section-heading-row">
