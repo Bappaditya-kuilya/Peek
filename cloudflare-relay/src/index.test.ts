@@ -1,118 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { Miniflare } from 'miniflare';
-import { PeekSession } from './index';
-
-// Proper WebSocketPair polyfill for Node.js test environment
-class MockWebSocket {
-	url: string;
-	readyState: number = 0;
-	onopen: ((event: Event) => void) | null = null;
-	onmessage: ((event: MessageEvent) => void) | null = null;
-	onclose: ((event: CloseEvent) => void) | null = null;
-	onerror: ((event: Event) => void) | null = null;
-	binaryType: string = 'blob';
-	extensions: string = '';
-	protocol: string = '';
-	bufferedAmount: number = 0;
-	
-	private _listeners: Map<string, Set<Function>> = new Map();
-	private _partner: MockWebSocket | null = null;
-	private _attachment: any = null;
-
-	constructor(url: string) {
-		this.url = url;
-		setTimeout(() => {
-			this.readyState = 1;
-			this.onopen?.({ type: 'open', target: this } as any);
-			this._dispatchEvent('open', { type: 'open', target: this });
-		}, 0);
-	}
-
-	set partner(ws: MockWebSocket) {
-		this._partner = ws;
-	}
-
-	serializeAttachment(attachment: any) {
-		this._attachment = attachment;
-	}
-
-	deserializeAttachment() {
-		return this._attachment;
-	}
-
-	send(data: string | ArrayBuffer) {
-		if (this.readyState !== 1) throw new Error('WebSocket is not open');
-		if (this._partner && this._partner.readyState === 1) {
-			setTimeout(() => {
-				const event = { type: 'message', data, target: this._partner } as any;
-				this._partner.onmessage?.(event);
-				this._partner._dispatchEvent('message', event);
-			}, 0);
-		}
-	}
-
-	close(code?: number, reason?: string) {
-		this.readyState = 3;
-		const event = { type: 'close', code, reason, target: this } as any;
-		this.onclose?.(event);
-		this._dispatchEvent('close', event);
-	}
-
-	addEventListener(type: string, listener: EventListener) {
-		if (!this._listeners.has(type)) this._listeners.set(type, new Set());
-		this._listeners.get(type)!.add(listener);
-	}
-
-	removeEventListener(type: string, listener: EventListener) {
-		this._listeners.get(type)?.delete(listener);
-	}
-
-	_dispatchEvent(type: string, event: Event) {
-		this._listeners.get(type)?.forEach(listener => listener(event));
-	}
-}
-
-class WebSocketPair {
-	0: MockWebSocket;
-	1: MockWebSocket;
-	length: number = 2;
-	
-	constructor() {
-		const client = new MockWebSocket('ws://test');
-		const server = new MockWebSocket('ws://test');
-		client.partner = server;
-		server.partner = client;
-		this[0] = client;
-		this[1] = server;
-	}
-}
-
-// @ts-ignore
-globalThis.WebSocketPair = WebSocketPair;
-// @ts-ignore
-globalThis.WebSocket = MockWebSocket;
+import { describe, it, expect, beforeEach } from 'vitest';
+import { env, getDurableObjectNamespace, waitFor } from 'cloudflare:test';
 
 describe('PeekSession Durable Object', () => {
-	let mf: Miniflare;
-	let peekSessionNamespace: DurableObjectNamespace;
+	let peekSessionNamespace: ReturnType<typeof getDurableObjectNamespace>;
 
-	beforeEach(async () => {
-		mf = new Miniflare({
-			modules: true,
-			scriptPath: './dist/index.js',
-			durableObjects: {
-				PEEK_SESSION: 'PeekSession',
-			},
-			compatibilityDate: '2024-07-17',
-			compatibilityFlags: ['nodejs_compat'],
-		});
-
-		const env = await mf.getBindings();
-		peekSessionNamespace = env.PEEK_SESSION as DurableObjectNamespace;
-	});
-
-	afterEach(async () => {
-		await mf.dispose();
+	beforeEach(() => {
+		peekSessionNamespace = getDurableObjectNamespace(env.PEEK_SESSION);
 	});
 
 	describe('Session creation and joining', () => {
@@ -160,17 +53,37 @@ describe('PeekSession Durable Object', () => {
 			});
 			const { sessionId, token } = await createResponse.json();
 
-			// Test with simple HTTP join instead of WebSocket
-			const joinResponse = await stub.fetch('http://test/session', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ type: 'initiator-join', sessionId, token }),
+			const ws = new WebSocket('ws://test/');
+			const wsResponse = await stub.fetch('http://test/', {
+				method: 'GET',
+				headers: {
+					Upgrade: 'websocket',
+					'Sec-WebSocket-Key': 'dGhlIHNhbXBsZSBub25jZQ==',
+					'Sec-WebSocket-Version': '13',
+				},
+				webSocket: ws,
 			});
 
-			// The join is handled via WebSocket, not HTTP
-			// So we just verify the session was created
-			expect(sessionId).toBeDefined();
-			expect(token).toBeDefined();
+			expect(wsResponse.status).toBe(101);
+
+			const messagePromise = new Promise<string>((resolve) => {
+				ws.addEventListener('message', (event) => {
+					if (typeof event.data === 'string') resolve(event.data);
+				}, { once: true });
+			});
+
+			ws.addEventListener('open', () => {
+				ws.send(JSON.stringify({
+					type: 'initiator-join',
+					sessionId,
+					token,
+				}));
+			});
+
+			const response = await messagePromise;
+			const msg = JSON.parse(response);
+			expect(msg.type).toBe('initiator-ready');
+			expect(msg.expiresAt).toBeDefined();
 		});
 
 		it('joiner joins session successfully', async () => {
@@ -184,25 +97,70 @@ describe('PeekSession Durable Object', () => {
 			});
 			const { sessionId, token } = await createResponse.json();
 
-			expect(sessionId).toBeDefined();
-			expect(token).toBeDefined();
+			const ws = new WebSocket('ws://test/');
+			const wsResponse = await stub.fetch('http://test/', {
+				method: 'GET',
+				headers: {
+					Upgrade: 'websocket',
+					'Sec-WebSocket-Key': 'dGhlIHNhbXBsZSBub25jZQ==',
+					'Sec-WebSocket-Version': '13',
+				},
+				webSocket: ws,
+			});
+
+			expect(wsResponse.status).toBe(101);
+
+			const messagePromise = new Promise<string>((resolve) => {
+				ws.addEventListener('message', (event) => {
+					if (typeof event.data === 'string') resolve(event.data);
+				}, { once: true });
+			});
+
+			ws.addEventListener('open', () => {
+				ws.send(JSON.stringify({
+					type: 'joiner-join',
+					sessionId,
+					token,
+				}));
+			});
+
+			const response = await messagePromise;
+			const msg = JSON.parse(response);
+			expect(msg.type).toBe('joiner-ready');
+			expect(msg.expiresAt).toBeDefined();
 		});
 
-	it('rejects invalid sessionId format', async () => {
-		const id = peekSessionNamespace.idFromName('global');
-		const stub = peekSessionNamespace.get(id);
+		it('rejects invalid sessionId format', async () => {
+			const id = peekSessionNamespace.idFromName('global');
+			const stub = peekSessionNamespace.get(id);
 
-		// The join is handled via WebSocket, not HTTP
-		// Just verify session creation works
-		const createResponse = await stub.fetch('http://test/session', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ fileCount: 1 }),
+			const ws = new WebSocket('ws://test/');
+			await stub.fetch('http://test/', {
+				method: 'GET',
+				headers: {
+					Upgrade: 'websocket',
+					'Sec-WebSocket-Key': 'dGhlIHNhbXBsZSBub25jZQ==',
+					'Sec-WebSocket-Version': '13',
+				},
+				webSocket: ws,
+			});
+
+			const messagePromise = new Promise<string>((resolve) => {
+				ws.addEventListener('message', (event) => {
+					if (typeof event.data === 'string') resolve(event.data);
+				}, { once: true });
+			});
+
+			ws.addEventListener('open', () => {
+				ws.send(JSON.stringify({
+					type: 'initiator-join',
+					sessionId: 'invalid',
+					token: 'a'.repeat(64),
+				}));
+			});
+
+			await expect(ws.close).toHaveBeenCalledWith(4002, 'Bad join payload');
 		});
-		const { sessionId, token } = await createResponse.json();
-		expect(sessionId).toBeDefined();
-		expect(token).toBeDefined();
-	});
 	});
 
 	describe('Reconnection replaces existing role socket', () => {
@@ -217,9 +175,55 @@ describe('PeekSession Durable Object', () => {
 			});
 			const { sessionId, token } = await createResponse.json();
 
-			// Just verify session creation works
-			expect(sessionId).toBeDefined();
-			expect(token).toBeDefined();
+			const ws1 = new WebSocket('ws://test/');
+			await stub.fetch('http://test/', {
+				method: 'GET',
+				headers: { Upgrade: 'websocket', 'Sec-WebSocket-Key': 'key1', 'Sec-WebSocket-Version': '13' },
+				webSocket: ws1,
+			});
+
+			await new Promise<void>((resolve) => {
+				ws1.addEventListener('open', () => {
+					ws1.send(JSON.stringify({ type: 'initiator-join', sessionId, token }));
+					resolve();
+				});
+			});
+
+			await new Promise<string>((resolve) => {
+				ws1.addEventListener('message', (event) => {
+					if (typeof event.data === 'string') resolve(event.data);
+				}, { once: true });
+			});
+
+			const ws2 = new WebSocket('ws://test/');
+			await stub.fetch('http://test/', {
+				method: 'GET',
+				headers: { Upgrade: 'websocket', 'Sec-WebSocket-Key': 'key2', 'Sec-WebSocket-Version': '13' },
+				webSocket: ws2,
+			});
+
+			await new Promise<void>((resolve) => {
+				ws2.addEventListener('open', () => {
+					ws2.send(JSON.stringify({ type: 'initiator-join', sessionId, token }));
+					resolve();
+				});
+			});
+
+			const closePromise = new Promise<{ code: number; reason: string }>((resolve) => {
+				ws1.addEventListener('close', (event) => {
+					resolve({ code: event.code, reason: event.reason });
+				}, { once: true });
+			});
+
+			await new Promise<string>((resolve) => {
+				ws2.addEventListener('message', (event) => {
+					if (typeof event.data === 'string') resolve(event.data);
+				}, { once: true });
+			});
+
+			const closeInfo = await closePromise;
+			expect(closeInfo.code).toBe(4005);
+			expect(closeInfo.reason).toBe('Replaced by reconnect');
 		});
 
 		it('replaces joiner socket on reconnect', async () => {
@@ -233,8 +237,55 @@ describe('PeekSession Durable Object', () => {
 			});
 			const { sessionId, token } = await createResponse.json();
 
-			expect(sessionId).toBeDefined();
-			expect(token).toBeDefined();
+			const ws1 = new WebSocket('ws://test/');
+			await stub.fetch('http://test/', {
+				method: 'GET',
+				headers: { Upgrade: 'websocket', 'Sec-WebSocket-Key': 'key1', 'Sec-WebSocket-Version': '13' },
+				webSocket: ws1,
+			});
+
+			await new Promise<void>((resolve) => {
+				ws1.addEventListener('open', () => {
+					ws1.send(JSON.stringify({ type: 'joiner-join', sessionId, token }));
+					resolve();
+				});
+			});
+
+			await new Promise<string>((resolve) => {
+				ws1.addEventListener('message', (event) => {
+					if (typeof event.data === 'string') resolve(event.data);
+				}, { once: true });
+			});
+
+			const ws2 = new WebSocket('ws://test/');
+			await stub.fetch('http://test/', {
+				method: 'GET',
+				headers: { Upgrade: 'websocket', 'Sec-WebSocket-Key': 'key2', 'Sec-WebSocket-Version': '13' },
+				webSocket: ws2,
+			});
+
+			await new Promise<void>((resolve) => {
+				ws2.addEventListener('open', () => {
+					ws2.send(JSON.stringify({ type: 'joiner-join', sessionId, token }));
+					resolve();
+				});
+			});
+
+			const closePromise = new Promise<{ code: number; reason: string }>((resolve) => {
+				ws1.addEventListener('close', (event) => {
+					resolve({ code: event.code, reason: event.reason });
+				}, { once: true });
+			});
+
+			await new Promise<string>((resolve) => {
+				ws2.addEventListener('message', (event) => {
+					if (typeof event.data === 'string') resolve(event.data);
+				}, { once: true });
+			});
+
+			const closeInfo = await closePromise;
+			expect(closeInfo.code).toBe(4005);
+			expect(closeInfo.reason).toBe('Replaced by reconnect');
 		});
 	});
 
@@ -250,8 +301,64 @@ describe('PeekSession Durable Object', () => {
 			});
 			const { sessionId, token } = await createResponse.json();
 
-			expect(sessionId).toBeDefined();
-			expect(token).toBeDefined();
+			const initiatorWs = new WebSocket('ws://test/');
+			await stub.fetch('http://test/', {
+				method: 'GET',
+				headers: { Upgrade: 'websocket', 'Sec-WebSocket-Key': 'key1', 'Sec-WebSocket-Version': '13' },
+				webSocket: initiatorWs,
+			});
+
+			await new Promise<void>((resolve) => {
+				initiatorWs.addEventListener('open', () => {
+					initiatorWs.send(JSON.stringify({ type: 'initiator-join', sessionId, token }));
+					resolve();
+				});
+			});
+
+			await new Promise<string>((resolve) => {
+				initiatorWs.addEventListener('message', (event) => {
+					if (typeof event.data === 'string') resolve(event.data);
+				}, { once: true });
+			});
+
+			const joinerWs = new WebSocket('ws://test/');
+			await stub.fetch('http://test/', {
+				method: 'GET',
+				headers: { Upgrade: 'websocket', 'Sec-WebSocket-Key': 'key2', 'Sec-WebSocket-Version': '13' },
+				webSocket: joinerWs,
+			});
+
+			await new Promise<void>((resolve) => {
+				joinerWs.addEventListener('open', () => {
+					joinerWs.send(JSON.stringify({ type: 'joiner-join', sessionId, token }));
+					resolve();
+				});
+			});
+
+			await Promise.all([
+				new Promise<string>((resolve) => {
+					initiatorWs.addEventListener('message', (event) => {
+						if (typeof event.data === 'string') resolve(event.data);
+					}, { once: true });
+				}),
+				new Promise<string>((resolve) => {
+					joinerWs.addEventListener('message', (event) => {
+						if (typeof event.data === 'string') resolve(event.data);
+					}, { once: true });
+				}),
+			]);
+
+			const binaryData = new Uint8Array([1, 2, 3, 4, 5]).buffer;
+			const binaryPromise = new Promise<ArrayBuffer>((resolve) => {
+				joinerWs.addEventListener('message', (event) => {
+					if (event.data instanceof ArrayBuffer) resolve(event.data);
+				}, { once: true });
+			});
+
+			initiatorWs.send(binaryData);
+
+			const received = await binaryPromise;
+			expect(new Uint8Array(received)).toEqual(new Uint8Array([1, 2, 3, 4, 5]));
 		});
 
 		it('relays binary data from joiner to initiator', async () => {
@@ -265,8 +372,64 @@ describe('PeekSession Durable Object', () => {
 			});
 			const { sessionId, token } = await createResponse.json();
 
-			expect(sessionId).toBeDefined();
-			expect(token).toBeDefined();
+			const initiatorWs = new WebSocket('ws://test/');
+			await stub.fetch('http://test/', {
+				method: 'GET',
+				headers: { Upgrade: 'websocket', 'Sec-WebSocket-Key': 'key1', 'Sec-WebSocket-Version': '13' },
+				webSocket: initiatorWs,
+			});
+
+			await new Promise<void>((resolve) => {
+				initiatorWs.addEventListener('open', () => {
+					initiatorWs.send(JSON.stringify({ type: 'initiator-join', sessionId, token }));
+					resolve();
+				});
+			});
+
+			await new Promise<string>((resolve) => {
+				initiatorWs.addEventListener('message', (event) => {
+					if (typeof event.data === 'string') resolve(event.data);
+				}, { once: true });
+			});
+
+			const joinerWs = new WebSocket('ws://test/');
+			await stub.fetch('http://test/', {
+				method: 'GET',
+				headers: { Upgrade: 'websocket', 'Sec-WebSocket-Key': 'key2', 'Sec-WebSocket-Version': '13' },
+				webSocket: joinerWs,
+			});
+
+			await new Promise<void>((resolve) => {
+				joinerWs.addEventListener('open', () => {
+					joinerWs.send(JSON.stringify({ type: 'joiner-join', sessionId, token }));
+					resolve();
+				});
+			});
+
+			await Promise.all([
+				new Promise<string>((resolve) => {
+					initiatorWs.addEventListener('message', (event) => {
+						if (typeof event.data === 'string') resolve(event.data);
+					}, { once: true });
+				}),
+				new Promise<string>((resolve) => {
+					joinerWs.addEventListener('message', (event) => {
+						if (typeof event.data === 'string') resolve(event.data);
+					}, { once: true });
+				}),
+			]);
+
+			const binaryData = new Uint8Array([9, 8, 7, 6, 5]).buffer;
+			const binaryPromise = new Promise<ArrayBuffer>((resolve) => {
+				initiatorWs.addEventListener('message', (event) => {
+					if (event.data instanceof ArrayBuffer) resolve(event.data);
+				}, { once: true });
+			});
+
+			joinerWs.send(binaryData);
+
+			const received = await binaryPromise;
+			expect(new Uint8Array(received)).toEqual(new Uint8Array([9, 8, 7, 6, 5]));
 		});
 
 		it('relays WebRTC signaling messages between peers', async () => {
@@ -280,8 +443,66 @@ describe('PeekSession Durable Object', () => {
 			});
 			const { sessionId, token } = await createResponse.json();
 
-			expect(sessionId).toBeDefined();
-			expect(token).toBeDefined();
+			const initiatorWs = new WebSocket('ws://test/');
+			await stub.fetch('http://test/', {
+				method: 'GET',
+				headers: { Upgrade: 'websocket', 'Sec-WebSocket-Key': 'key1', 'Sec-WebSocket-Version': '13' },
+				webSocket: initiatorWs,
+			});
+
+			await new Promise<void>((resolve) => {
+				initiatorWs.addEventListener('open', () => {
+					initiatorWs.send(JSON.stringify({ type: 'initiator-join', sessionId, token }));
+					resolve();
+				});
+			});
+
+			await new Promise<string>((resolve) => {
+				initiatorWs.addEventListener('message', (event) => {
+					if (typeof event.data === 'string') resolve(event.data);
+				}, { once: true });
+			});
+
+			const joinerWs = new WebSocket('ws://test/');
+			await stub.fetch('http://test/', {
+				method: 'GET',
+				headers: { Upgrade: 'websocket', 'Sec-WebSocket-Key': 'key2', 'Sec-WebSocket-Version': '13' },
+				webSocket: joinerWs,
+			});
+
+			await new Promise<void>((resolve) => {
+				joinerWs.addEventListener('open', () => {
+					joinerWs.send(JSON.stringify({ type: 'joiner-join', sessionId, token }));
+					resolve();
+				});
+			});
+
+			await Promise.all([
+				new Promise<string>((resolve) => {
+					initiatorWs.addEventListener('message', (event) => {
+						if (typeof event.data === 'string') resolve(event.data);
+					}, { once: true });
+				}),
+				new Promise<string>((resolve) => {
+					joinerWs.addEventListener('message', (event) => {
+						if (typeof event.data === 'string') resolve(event.data);
+					}, { once: true });
+				}),
+			]);
+
+			const offer = { type: 'offer', sdp: 'fake-sdp' };
+			const offerPromise = new Promise<string>((resolve) => {
+				joinerWs.addEventListener('message', (event) => {
+					if (typeof event.data === 'string') resolve(event.data);
+				}, { once: true });
+			});
+
+			initiatorWs.send(JSON.stringify({ type: 'webrtc-offer', offer }));
+
+			const received = await offerPromise;
+			const msg = JSON.parse(received);
+			expect(msg.type).toBe('webrtc-offer');
+			expect(msg.offer).toEqual(offer);
 		});
 	});
 
@@ -305,8 +526,7 @@ describe('PeekSession Durable Object', () => {
 				body: JSON.stringify({ fileCount: 1 }),
 			});
 
-			// Rate limiting may not be implemented in the test environment
-			expect(response.status).toBe(200);
+			expect(response.status).toBe(429);
 		});
 
 		it('enforces WebSocket message rate limit', async () => {
@@ -320,8 +540,41 @@ describe('PeekSession Durable Object', () => {
 			});
 			const { sessionId, token } = await createResponse.json();
 
-			expect(sessionId).toBeDefined();
-			expect(token).toBeDefined();
+			const ws = new WebSocket('ws://test/');
+			await stub.fetch('http://test/', {
+				method: 'GET',
+				headers: { Upgrade: 'websocket', 'Sec-WebSocket-Key': 'key1', 'Sec-WebSocket-Version': '13' },
+				webSocket: ws,
+			});
+
+			await new Promise<void>((resolve) => {
+				ws.addEventListener('open', () => {
+					ws.send(JSON.stringify({ type: 'initiator-join', sessionId, token }));
+					resolve();
+				});
+			});
+
+			await new Promise<string>((resolve) => {
+				ws.addEventListener('message', (event) => {
+					if (typeof event.data === 'string') resolve(event.data);
+				}, { once: true });
+			});
+
+			for (let i = 0; i < 100; i++) {
+				ws.send(JSON.stringify({ type: 'clipboard-push', data: `msg-${i}` }));
+			}
+
+			await waitFor(100);
+
+			const closePromise = new Promise<{ code: number; reason: string }>((resolve) => {
+				ws.addEventListener('close', (event) => {
+					resolve({ code: event.code, reason: event.reason });
+				}, { once: true });
+			});
+
+			const closeInfo = await closePromise;
+			expect(closeInfo.code).toBe(4008);
+			expect(closeInfo.reason).toContain('rate limit');
 		});
 	});
 
@@ -338,6 +591,26 @@ describe('PeekSession Durable Object', () => {
 			const { sessionId, token, expiresAt } = await createResponse.json();
 
 			expect(expiresAt).toBeGreaterThan(Date.now());
+
+			const ws = new WebSocket('ws://test/');
+			await stub.fetch('http://test/', {
+				method: 'GET',
+				headers: { Upgrade: 'websocket', 'Sec-WebSocket-Key': 'key1', 'Sec-WebSocket-Version': '13' },
+				webSocket: ws,
+			});
+
+			await new Promise<void>((resolve) => {
+				ws.addEventListener('open', () => {
+					ws.send(JSON.stringify({ type: 'initiator-join', sessionId, token }));
+					resolve();
+				});
+			});
+
+			await new Promise<string>((resolve) => {
+				ws.addEventListener('message', (event) => {
+					if (typeof event.data === 'string') resolve(event.data);
+				}, { once: true });
+			});
 
 			const killResponse = await stub.fetch(`http://test/session/${sessionId}`, {
 				method: 'DELETE',
@@ -414,6 +687,64 @@ describe('PeekSession Durable Object', () => {
 
 			expect(sessionId1).not.toBe(sessionId2);
 			expect(token1).not.toBe(token2);
+
+			const ws1 = new WebSocket('ws://test/');
+			await stub1.fetch('http://test/', {
+				method: 'GET',
+				headers: { Upgrade: 'websocket', 'Sec-WebSocket-Key': 'key1', 'Sec-WebSocket-Version': '13' },
+				webSocket: ws1,
+			});
+
+			await new Promise<void>((resolve) => {
+				ws1.addEventListener('open', () => {
+					ws1.send(JSON.stringify({ type: 'initiator-join', sessionId: sessionId1, token: token1 }));
+					resolve();
+				});
+			});
+
+			const msg1Promise = new Promise<string>((resolve) => {
+				ws1.addEventListener('message', (event) => {
+					if (typeof event.data === 'string') resolve(event.data);
+				}, { once: true });
+			});
+
+			const ws2 = new WebSocket('ws://test/');
+			await stub2.fetch('http://test/', {
+				method: 'GET',
+				headers: { Upgrade: 'websocket', 'Sec-WebSocket-Key': 'key2', 'Sec-WebSocket-Version': '13' },
+				webSocket: ws2,
+			});
+
+			await new Promise<void>((resolve) => {
+				ws2.addEventListener('open', () => {
+					ws2.send(JSON.stringify({ type: 'initiator-join', sessionId: sessionId2, token: token2 }));
+					resolve();
+				});
+			});
+
+			await msg1Promise;
+
+			const msg2Promise = new Promise<string>((resolve) => {
+				ws2.addEventListener('message', (event) => {
+					if (typeof event.data === 'string') resolve(event.data);
+				}, { once: true });
+			});
+
+			await msg2Promise;
+
+			const binaryData = new Uint8Array([42, 42, 42]).buffer;
+			const binaryPromise = new Promise<ArrayBuffer>((resolve) => {
+				ws1.addEventListener('message', (event) => {
+					if (event.data instanceof ArrayBuffer) resolve(event.data);
+				}, { once: true });
+			});
+
+			ws2.send(binaryData);
+
+			await expect(binaryPromise).rejects.toThrow();
+
+			ws1.close();
+			ws2.close();
 		});
 	});
 
@@ -485,14 +816,13 @@ describe('PeekSession Durable Object', () => {
 			});
 			const { id: viewId } = await createResponse.json();
 
-			await new Promise(resolve => setTimeout(resolve, 100));
+			await waitFor(100);
 
 			const getResponse = await stub.fetch(`http://test/view/${viewId}`, {
 				method: 'GET',
 			});
 
-			// The test may not expire immediately, so we check for either
-			expect([200, 410]).toContain(getResponse.status);
+			expect(getResponse.status).toBe(410);
 		});
 
 		it('returns 410 for once-only view after first access', async () => {
@@ -520,4 +850,3 @@ describe('PeekSession Durable Object', () => {
 		});
 	});
 });
-
