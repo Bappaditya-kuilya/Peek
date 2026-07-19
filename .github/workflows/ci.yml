@@ -2,44 +2,51 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [main]
   pull_request:
+    branches: [main]
 
 jobs:
-  verify:
+  relay-tests:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out
-        uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: |
-            relay/package-lock.json
-            web/package-lock.json
-
-      - name: Install relay deps
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: cloudflare-relay/package-lock.json
+      - name: Install dependencies
         run: npm ci
-        working-directory: relay
+        working-directory: cloudflare-relay
+      - name: Run tests
+        run: npm test
+        working-directory: cloudflare-relay
+      - name: Typecheck
+        run: npx tsc --noEmit
+        working-directory: cloudflare-relay
 
-      - name: Install web deps
+  web-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
         run: npm ci
         working-directory: web
-
-      - name: Run relay tests
-        run: npm test
-        working-directory: relay
-
-      - name: Run web tests
+      - name: Run tests
         run: npm test
         working-directory: web
-
-      - name: Build web app
+      - name: Typecheck
+        run: npm run typecheck
+        working-directory: web
+      - name: Lint
+        run: npm run lint
+        working-directory: web
+      - name: Build
         run: npm run build
         working-directory: web
-
