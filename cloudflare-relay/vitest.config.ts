@@ -4,17 +4,15 @@ export default defineConfig({
 	test: {
 		include: ['src/**/*.test.ts'],
 		testTimeout: 30000,
-		environment: 'node',
-		setupFiles: ['./vitest.setup.ts'],
-		pool: 'forks',
-		poolOptions: {
-			forks: {
-				singleFork: true,
-				isolate: true,
+		environment: 'miniflare',
+		miniflare: {
+			modules: true,
+			scriptPath: './src/index.ts',
+			durableObjects: {
+				PEEK_SESSION: 'PeekSession',
 			},
-		},
-		sequence: {
-			hooks: 'list',
+			compatibilityDate: '2024-07-17',
+			compatibilityFlags: ['nodejs_compat'],
 		},
 	},
 });
