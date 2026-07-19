@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { importKeyFromBase64 } from '../shared/crypto.js';
+import { getDeviceId } from '../utils/deviceIdentity.js';
 import {
   SESSION_ENDED_CLOSE_CODES,
   SESSION_REPLACED_CLOSE_CODE,
@@ -8,8 +9,6 @@ import {
 } from '../shared/transport.js';
 import { useWebSocket, WS_LOST } from './useWebSocket.js';
 import { getRelayWsUrl } from '../utils/relayConfig.js';
-
-const RELAY_WS_URL = getRelayWsUrl();
 
 export function useSenderSessionCoordinator({
   clipboard,
@@ -53,8 +52,9 @@ export function useSenderSessionCoordinator({
       }
     }
 
-    socket.onopen = () => {
-      socket.send(JSON.stringify({ sessionId: session.sessionId, token: session.token, type: 'initiator-join' }));
+    socket.onopen = async () => {
+      const deviceId = await getDeviceId();
+      socket.send(JSON.stringify({ sessionId: session.sessionId, token: session.token, type: 'initiator-join', deviceId }));
       clipboard.flushDraft().catch(() => {});
     };
 
@@ -161,7 +161,7 @@ export function useReceiverSessionCoordinator({
   const handlersRef = useRef({});
 
   const wsEnabled = Boolean(fullLinkMode && key);
-  const wsUrl = fullLinkMode ? RELAY_WS_URL : '';
+  const wsUrl = fullLinkMode ? getRelayWsUrl(sessionId) : '';
 
   const onMessage = (event) => {
     handlersRef.current.onMessage?.(event);
@@ -207,10 +207,11 @@ export function useReceiverSessionCoordinator({
   }, [connectionState]);
 
   useEffect(() => {
-    handlersRef.current.onOpen = () => {
+    handlersRef.current.onOpen = async () => {
       const s = fallbackSocketRef.current;
       if (s) {
-        s.send(JSON.stringify({ type: 'joiner-join', sessionId, token }));
+        const deviceId = await getDeviceId();
+        s.send(JSON.stringify({ type: 'joiner-join', sessionId, token, deviceId }));
       }
       clipboard.flushDraft().catch(() => {});
       if (joinTimeoutRef.current) window.clearTimeout(joinTimeoutRef.current);

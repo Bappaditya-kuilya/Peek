@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import { Watermark } from '../../components/Watermark.jsx';
 
@@ -42,13 +43,13 @@ export function SenderHomeHero({ onStart, onDrop }) {
       <div className="workspace-main">
         <div className="hero-card stack-lg">
           <div className="workspace-header">
-            <Watermark eyebrow="Shared Device Transfer" />
+            <Watermark eyebrow="Cross-Network File Transfer" />
           </div>
 
           <div className="stack-md">
-            <h1 className="workspace-title">Move files into a shared browser without friction.</h1>
+            <h1 className="workspace-title">Transfer files across networks — no shared WiFi, no server sees your data.</h1>
             <p className="hero-subtitle">
-              Built for labs, library PCs, kiosks, and temporary machines where installs and sign-ins are the slowest part of the job.
+              WebRTC connects devices directly across different networks. When direct connection fails, encrypted relay carries only ciphertext — encryption keys never leave the browser.
             </p>
           </div>
 
@@ -74,6 +75,13 @@ export function SenderHomeHero({ onStart, onDrop }) {
           <div className="stack-sm">
             <button type="button" className="button-primary" onClick={onStart}>Start sharing files</button>
             <div className="helper-copy">Choose files first, then create the short-lived session.</div>
+          </div>
+
+          <div className="screen-divider" />
+
+          <div className="stack-sm">
+            <Link to="/how-it-works" className="link-chip">How your data moves →</Link>
+            <Link to="/privacy" className="link-chip">Privacy policy →</Link>
           </div>
         </div>
       </div>

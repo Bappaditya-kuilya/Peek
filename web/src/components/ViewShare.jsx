@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import { shareUrl } from '../utils/share.js';
+
 export function ViewShare({
   copyLabel = 'Copy link',
   disabled = false,
@@ -13,6 +16,26 @@ export function ViewShare({
   onceOnly,
   statusMessage = '',
 }) {
+  const [shareState, setShareState] = useState('idle');
+
+  const handleShare = async () => {
+    if (!generatedUrl) {
+      return;
+    }
+    setShareState('sharing');
+    const result = await shareUrl({
+      title: 'Peek file transfer session',
+      text: 'Join my Peek file transfer session',
+      url: generatedUrl,
+    });
+    if (result.success) {
+      setShareState(result.method === 'native' ? 'shared' : 'copied');
+    } else {
+      setShareState('failed');
+    }
+    window.setTimeout(() => setShareState('idle'), 2000);
+  };
+
   return (
     <div className="panel stack-sm">
       <div className="section-heading-row">
@@ -52,9 +75,20 @@ export function ViewShare({
       {generatedUrl ? (
         <>
           <div className="view-link-output">{generatedUrl}</div>
-          <button type="button" className="compact-button" onClick={onCopy}>
-            {copyLabel}
-          </button>
+          <div className="view-link-actions stack-xs">
+            <button type="button" className="compact-button" onClick={onCopy}>
+              {copyLabel}
+            </button>
+            <button
+              type="button"
+              className="compact-button"
+              onClick={handleShare}
+              disabled={shareState === 'sharing'}
+              aria-label={shareState === 'shared' ? 'Shared via system share' : shareState === 'copied' ? 'Copied link to clipboard' : shareState === 'failed' ? 'Share failed' : 'Share link via system share or copy to clipboard'}
+            >
+              {shareState === 'sharing' ? 'Sharing…' : shareState === 'shared' ? 'Shared' : shareState === 'copied' ? 'Copied' : shareState === 'failed' ? 'Failed' : 'Share'}
+            </button>
+          </div>
         </>
       ) : null}
       {statusMessage ? <div className="status-copy">{statusMessage}</div> : null}
