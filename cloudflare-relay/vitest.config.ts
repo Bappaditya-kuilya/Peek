@@ -5,10 +5,8 @@ export default defineConfig({
 		include: ['src/**/*.test.ts'],
 		testTimeout: 30000,
 		pool: '@cloudflare/vitest-pool-workers',
-		poolOptions: {
-			workers: {
-				wrangler: { configPath: './wrangler.toml' },
-			},
+		workers: {
+			wrangler: { configPath: './wrangler.toml' },
 		},
 	},
 });
