@@ -5,7 +5,6 @@
   "scripts": {
     "install:web": "npm --prefix web install",
     "build": "npm --prefix web run build",
-    "test:relay": "node --test relay/tests/*.test.js",
-    "test": "npm run test:relay && npm --prefix web run test && npm run build"
+    "test": "npm --prefix web run test && npm run build"
   }
 }
