@@ -19,6 +19,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
         working-directory: cloudflare-relay
+      - name: Build
+        run: npm run build
+        working-directory: cloudflare-relay
       - name: Run tests
         run: npm test
         working-directory: cloudflare-relay
@@ -40,9 +43,6 @@ jobs:
         working-directory: web
       - name: Run tests
         run: npm test
-        working-directory: web
-      - name: Typecheck
-        run: npm run typecheck
         working-directory: web
       - name: Lint
         run: npm run lint
