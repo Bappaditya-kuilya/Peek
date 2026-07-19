@@ -33,16 +33,18 @@ export function getRelayHttpUrl() {
   return PRODUCTION_HTTP_URL;
 }
 
-export function getRelayWsUrl() {
+export function getRelayWsUrl(sessionId = '') {
   if (import.meta.env.VITE_RELAY_WS_URL) {
     return import.meta.env.VITE_RELAY_WS_URL;
   }
 
   if (isLocalHost()) {
-    return getLocalRelayWsOrigin(window.location.protocol);
+    const base = getLocalRelayWsOrigin(window.location.protocol);
+    return sessionId ? `${base}?sessionId=${sessionId}` : base;
   }
 
-  return PRODUCTION_WS_URL;
+  const base = PRODUCTION_WS_URL;
+  return sessionId ? `${base}?sessionId=${sessionId}` : base;
 }
 
 export function getReceiverBaseUrl() {

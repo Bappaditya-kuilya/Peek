@@ -2,12 +2,16 @@ export interface Env {
 	PEEK_SESSION: DurableObjectNamespace;
 }
 
+interface ReceiverInfo {
+	joinedAt: number;
+}
+
 interface Session {
 	id: string;
 	token: string;
 	expiresAt: number;
 	initiatorJoinedAt: number | null;
-	joinerJoinedAt: number | null;
+	receivers: Map<string, ReceiverInfo>;
 	fileCount: number;
 }
 
@@ -23,7 +27,8 @@ interface ViewEntry {
 
 interface WebSocketAttachment {
 	sessionId: string;
-	role: "initiator" | "joiner";
+	role: "initiator" | "receiver";
+	receiverId?: string;
 }
 
 export class PeekSession {
@@ -73,10 +78,27 @@ export class PeekSession {
 		const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
 		if (!attachment || !attachment.sessionId) return;
 
-		const peerRole = attachment.role === "initiator" ? "joiner" : "initiator";
-		const peerWs = await this.getRoleWebSocket(attachment.sessionId, peerRole);
-		if (peerWs && peerWs.readyState === WebSocket.OPEN) {
-			peerWs.send(JSON.stringify({ type: "peer-disconnected" }));
+		const session = await this.getSession(attachment.sessionId);
+		if (!session) return;
+
+		if (attachment.role === "receiver" && attachment.receiverId) {
+			const updatedReceivers = new Map(session.receivers);
+			updatedReceivers.delete(attachment.receiverId);
+			await this.state.storage.put(`session:${attachment.sessionId}`, {
+				...session,
+				receivers: updatedReceivers,
+			});
+
+			const initiatorWs = this.getInitiatorWebSocket(attachment.sessionId);
+			if (initiatorWs && initiatorWs.readyState === WebSocket.OPEN) {
+				initiatorWs.send(JSON.stringify({ type: "peer-disconnected", receiverId: attachment.receiverId }));
+			}
+		} else if (attachment.role === "initiator") {
+			const receiverWsList = this.getAllReceiverWebSockets(attachment.sessionId);
+			for (const receiverWs of receiverWsList) {
+				receiverWs.close(4000, "Initiator disconnected");
+			}
+			await this.killSessionInternal(attachment.sessionId);
 		}
 	}
 
@@ -119,15 +141,15 @@ export class PeekSession {
 
 	private async createSession(request: Request): Promise<Response> {
 		try {
-			const body = await request.json().catch(() => ({}));
+			const body = (await request.json().catch(() => ({}))) as { fileCount?: number };
 			const fileCount = Math.max(0, Math.min(500, Number(body?.fileCount || 0)));
 
 			const sessionIdBytes = new Uint8Array(8);
-			globalThis.crypto.getRandomValues(sessionIdBytes);
+			crypto.getRandomValues(sessionIdBytes);
 			const sessionId = Array.from(sessionIdBytes, b => b.toString(16).padStart(2, '0')).join('');
 
 			const tokenBytes = new Uint8Array(32);
-			globalThis.crypto.getRandomValues(tokenBytes);
+			crypto.getRandomValues(tokenBytes);
 			const token = Array.from(tokenBytes, b => b.toString(16).padStart(2, '0')).join('');
 
 			const session: Session = {
@@ -135,7 +157,7 @@ export class PeekSession {
 				token,
 				expiresAt: Date.now() + 60 * 60 * 1000,
 				initiatorJoinedAt: null,
-				joinerJoinedAt: null,
+				receivers: new Map(),
 				fileCount,
 			};
 
@@ -143,7 +165,7 @@ export class PeekSession {
 			await this.state.storage.put(`session_token:${token}`, sessionId);
 
 			return new Response(
-				JSON.stringify({ sessionId, token, expiresAt: session.expiresAt }),
+				JSON.stringify({ sessionId, token, expiresAt: session.expiresAt, fileCount: session.fileCount }),
 				{ headers: { "Content-Type": "application/json" } }
 			);
 		} catch (e) {
@@ -153,7 +175,7 @@ export class PeekSession {
 
 	private async killSession(request: Request): Promise<Response> {
 		const sessionId = new URL(request.url).pathname.split("/")[2];
-		const body = await request.json().catch(() => ({}));
+		const body = (await request.json().catch(() => ({}))) as { token?: string };
 		const token = body?.token || "";
 
 		const session = await this.getSession(sessionId);
@@ -183,7 +205,7 @@ export class PeekSession {
 			}
 
 			const viewIdBytes = new Uint8Array(8);
-			globalThis.crypto.getRandomValues(viewIdBytes);
+			crypto.getRandomValues(viewIdBytes);
 			const viewId = Array.from(viewIdBytes, b => b.toString(16).padStart(2, '0')).join('');
 
 			const entry: ViewEntry = {
@@ -258,29 +280,46 @@ export class PeekSession {
 	}
 
 	private async killSessionInternal(sessionId: string): Promise<void> {
-		const session = await this.state.storage.get(`session:${sessionId}`);
+		const session = await this.state.storage.get<Session>(`session:${sessionId}`);
 		if (session) {
 			await this.state.storage.delete(`session_token:${session.token}`);
 		}
 		await this.state.storage.delete(`session:${sessionId}`);
 	}
 
-	private getRoleWebSocket(sessionId: string, role: "initiator" | "joiner"): WebSocket | null {
+	private getRoleWebSocket(sessionId: string, role: "initiator" | "receiver", receiverId?: string): WebSocket | null {
 		const websockets = this.state.getWebSockets();
 		for (const ws of websockets) {
 			const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
-			if (attachment && attachment.sessionId === sessionId && attachment.role === role && ws.readyState === WebSocket.OPEN) {
-				return ws;
+			if (!attachment || attachment.sessionId !== sessionId || attachment.role !== role || ws.readyState !== WebSocket.OPEN) {
+				continue;
 			}
+			if (role === "receiver" && receiverId && attachment.receiverId !== receiverId) {
+				continue;
+			}
+			return ws;
 		}
 		return null;
 	}
 
-	private getPeerWs(ws: WebSocket): WebSocket | null {
-		const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
-		if (!attachment || !attachment.sessionId) return null;
-		const peerRole = attachment.role === "initiator" ? "joiner" : "initiator";
-		return this.getRoleWebSocket(attachment.sessionId, peerRole);
+	private getInitiatorWebSocket(sessionId: string): WebSocket | null {
+		return this.getRoleWebSocket(sessionId, "initiator");
+	}
+
+	private getReceiverWebSocket(sessionId: string, receiverId: string): WebSocket | null {
+		return this.getRoleWebSocket(sessionId, "receiver", receiverId);
+	}
+
+	private getAllReceiverWebSockets(sessionId: string): WebSocket[] {
+		const websockets = this.state.getWebSockets();
+		const result: WebSocket[] = [];
+		for (const ws of websockets) {
+			const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+			if (attachment && attachment.sessionId === sessionId && attachment.role === "receiver" && ws.readyState === WebSocket.OPEN) {
+				result.push(ws);
+			}
+		}
+		return result;
 	}
 
 	async handleJsonMessage(ws: WebSocket, text: string): Promise<void> {
@@ -296,22 +335,22 @@ export class PeekSession {
 
 		switch (type) {
 			case "initiator-join":
-			case "joiner-join":
-				await this.handleJoin(ws, message, message.type === "initiator-join" ? "initiator" : "joiner");
+			case "receiver-join":
+				await this.handleJoin(ws, message, type === "initiator-join" ? "initiator" : "receiver");
 				break;
 			case "webrtc-offer":
 			case "webrtc-answer":
 			case "webrtc-candidate":
 			case "clipboard-push":
 			case "view-share-push":
-				await this.relayToPeer(ws, message);
+				await this.relaySignaling(ws, message);
 				break;
 			default:
 				break;
 		}
 	}
 
-	async handleJoin(ws: WebSocket, message: any, role: "initiator" | "joiner"): Promise<void> {
+	async handleJoin(ws: WebSocket, message: any, role: "initiator" | "receiver"): Promise<void> {
 		const { sessionId, token } = message;
 
 		if (!/^[a-f0-9]{16}$/i.test(String(sessionId || "")) ||
@@ -327,53 +366,94 @@ export class PeekSession {
 			return;
 		}
 
-		const existingWs = this.getRoleWebSocket(message.sessionId, role);
-		if (existingWs && existingWs !== ws) {
-			existingWs.close(4005, "Replaced by reconnect");
-		}
-
-		ws.serializeAttachment({ sessionId: message.sessionId, role });
-
 		if (role === "initiator") {
+			const existingWs = this.getInitiatorWebSocket(message.sessionId);
+			if (existingWs && existingWs !== ws) {
+				existingWs.close(4005, "Replaced by reconnect");
+			}
+			ws.serializeAttachment({ sessionId: message.sessionId, role: "initiator" });
+
 			await this.state.storage.put(`session:${message.sessionId}`, {
 				...session,
 				initiatorJoinedAt: Date.now(),
 			});
+
+			this.sendJson(ws, { type: "initiator-ready", expiresAt: session.expiresAt, receiverCount: session.receivers.size });
+			for (const [receiverId, receiver] of session.receivers) {
+				if (receiver.joinedAt) {
+					this.sendJson(ws, { type: "peer-connected", receiverId });
+				}
+			}
 		} else {
+			const receiverId = crypto.randomUUID();
+			const existingWs = this.getReceiverWebSocket(message.sessionId, receiverId);
+			if (existingWs && existingWs !== ws) {
+				existingWs.close(4005, "Replaced by reconnect");
+			}
+			ws.serializeAttachment({ sessionId: message.sessionId, role: "receiver", receiverId });
+
+			const updatedReceivers = new Map(session.receivers);
+			updatedReceivers.set(receiverId, { joinedAt: Date.now() });
+
 			await this.state.storage.put(`session:${message.sessionId}`, {
 				...session,
-				joinerJoinedAt: Date.now(),
+				receivers: updatedReceivers,
 			});
-		}
 
-		const peerRole = role === "initiator" ? "joiner" : "initiator";
-		const sessionInfo = await this.getSession(message.sessionId);
-		const peerJoinedAt = sessionInfo
-			? (role === "initiator" ? sessionInfo.joinerJoinedAt : sessionInfo.initiatorJoinedAt)
-			: null;
+			this.sendJson(ws, { type: "receiver-ready", receiverId, expiresAt: session.expiresAt, peerCount: updatedReceivers.size });
 
-		this.sendJson(ws, { type: `${role}-ready`, expiresAt: session.expiresAt });
-		if (peerJoinedAt) {
-			this.sendJson(ws, { type: "peer-connected", role: peerRole });
-		}
-
-		const peerWs = this.getRoleWebSocket(message.sessionId, peerRole);
-		if (peerWs) {
-			peerWs.send(JSON.stringify({ type: "peer-connected", role }));
+			const initiatorWs = this.getInitiatorWebSocket(message.sessionId);
+			if (initiatorWs) {
+				initiatorWs.send(JSON.stringify({ type: "peer-connected", receiverId }));
+			}
 		}
 	}
 
-	async relayToPeer(ws: WebSocket, message: any): Promise<void> {
-		const peerWs = this.getPeerWs(ws);
-		if (peerWs && peerWs.readyState === WebSocket.OPEN) {
-			peerWs.send(JSON.stringify(message));
+	async relaySignaling(ws: WebSocket, message: any): Promise<void> {
+		const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+		if (!attachment || !attachment.sessionId) return;
+
+		const targetReceiverId = message.targetReceiverId;
+		if (!targetReceiverId) {
+			return;
+		}
+
+		const targetWs = this.getReceiverWebSocket(attachment.sessionId, targetReceiverId);
+		if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+			targetWs.send(JSON.stringify(message));
+		}
+	}
+
+	async relayToInitiator(ws: WebSocket, message: any): Promise<void> {
+		const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+		if (!attachment || !attachment.sessionId || !attachment.receiverId) return;
+
+		const initiatorWs = this.getInitiatorWebSocket(attachment.sessionId);
+		if (initiatorWs && initiatorWs.readyState === WebSocket.OPEN) {
+			initiatorWs.send(JSON.stringify({ ...message, receiverId: attachment.receiverId }));
 		}
 	}
 
 	async handleBinaryMessage(ws: WebSocket, data: ArrayBuffer): Promise<void> {
-		const peerWs = this.getPeerWs(ws);
-		if (peerWs && peerWs.readyState === WebSocket.OPEN) {
-			peerWs.send(data);
+		const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+		if (!attachment || !attachment.sessionId) return;
+
+		if (attachment.role === "initiator") {
+			// Broadcast to all connected receivers
+			const session = await this.getSession(attachment.sessionId);
+			if (session) {
+				for (const [receiverId, receiver] of session.receivers) {
+					const receiverWs = this.getReceiverWebSocket(attachment.sessionId, receiverId);
+					if (receiverWs && receiverWs.readyState === WebSocket.OPEN) {
+						receiverWs.send(data);
+					}
+				}
+			}
+		} else if (attachment.role === "receiver") {
+			const initiatorWs = this.getInitiatorWebSocket(attachment.sessionId);
+			if (initiatorWs && initiatorWs.readyState === WebSocket.OPEN) {
+				initiatorWs.send(data);
+			}
 		}
 	}
 
@@ -418,7 +498,22 @@ export default {
 			return handleOptions(request);
 		}
 
-		const id = env.PEEK_SESSION.idFromName("global");
+		const url = new URL(request.url);
+		const upgradeHeader = request.headers.get("Upgrade");
+		const isWebSocket = upgradeHeader === "websocket";
+
+		let id: DurableObjectId;
+
+		if (isWebSocket) {
+			const sessionId = url.searchParams.get("sessionId");
+			if (!sessionId || !/^[a-f0-9]{16}$/i.test(sessionId)) {
+				return new Response("Missing or invalid sessionId", { status: 400 });
+			}
+			id = env.PEEK_SESSION.idFromName(sessionId);
+		} else {
+			id = env.PEEK_SESSION.idFromName("global");
+		}
+
 		const stub = env.PEEK_SESSION.get(id);
 		return stub.fetch(request);
 	},
