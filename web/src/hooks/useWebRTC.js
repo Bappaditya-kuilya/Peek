@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { recordIceEvent, shouldWarnTurn } from '../shared/iceMonitor.js';
+import * as Sentry from '@sentry/react';
 
 const DEV_ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -72,6 +73,7 @@ export function useWebRTC({
   onConnectionStateChange,
   onDataChannel,
   onFallbackNeeded,
+  onDeviceId,
 }) {
   const peerConnectionRef = useRef(null);
   const dataChannelRef = useRef(null);
@@ -112,7 +114,9 @@ export function useWebRTC({
           connection.restartIce();
         } else {
           if (shouldWarnTurn()) {
-            console.warn('[Peek] ICE failure rate >5% over 24h. Consider adding TURN servers.');
+            const message = '[Peek] ICE failure rate >5% over 24h. Consider adding TURN servers.';
+            console.warn(message);
+            Sentry.captureMessage(message, 'warning');
           }
           onFallbackNeeded?.();
         }
@@ -122,6 +126,23 @@ export function useWebRTC({
     connection.ondatachannel = (event) => {
       dataChannelRef.current = event.channel;
       onDataChannel?.(event.channel);
+      setupDataChannelHandlers(event.channel);
+    };
+  }
+
+  function setupDataChannelHandlers(channel) {
+    channel.binaryType = 'arraybuffer';
+    channel.onmessage = (event) => {
+      if (typeof event.data === 'string') {
+        try {
+          const message = JSON.parse(event.data);
+          if (message.type === 'device-id' && message.deviceId) {
+            onDeviceId?.(message.deviceId);
+          }
+        } catch {
+          // ignore non-JSON messages
+        }
+      }
     };
   }
 
@@ -135,6 +156,7 @@ export function useWebRTC({
         ordered: true,
       });
       dataChannelRef.current = channel;
+      setupDataChannelHandlers(channel);
       onDataChannel?.(channel);
     }
 
@@ -181,6 +203,12 @@ export function useWebRTC({
     }
   }
 
+  async function sendDeviceId(deviceId) {
+    if (dataChannelRef.current?.readyState === 'open') {
+      dataChannelRef.current.send(JSON.stringify({ type: 'device-id', deviceId }));
+    }
+  }
+
   return {
     addIceCandidate,
     acceptAnswer,
@@ -190,5 +218,6 @@ export function useWebRTC({
     createPeerConnection,
     dataChannelRef,
     peerConnectionRef,
+    sendDeviceId,
   };
 }

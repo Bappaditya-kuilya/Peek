@@ -6,7 +6,6 @@ import {
 import { getReceiverBaseUrl, getRelayHttpUrl, getRelayWsUrl } from '../utils/relayConfig.js';
 
 const DEFAULT_HTTP_URL = getRelayHttpUrl();
-const DEFAULT_WS_URL = getRelayWsUrl();
 const SESSION_CREATE_TIMEOUT_MS = 10000;
 
 export function useSession() {
@@ -77,7 +76,7 @@ export function useSession() {
       key,
       keyBase64,
       receiverBaseUrl,
-      wsUrl: DEFAULT_WS_URL,
+      wsUrl: getRelayWsUrl(payload.sessionId),
     };
 
     setSession(nextSession);

@@ -1128,3 +1128,226 @@ textarea:focus-visible {
     align-items: flex-start;
   }
 }
+
+/* -------------------------------------------------------- Data Flow Explainer */
+
+.flow-diagram {
+  margin: var(--space-6) 0;
+  overflow-x: auto;
+}
+
+.flow-svg {
+  width: 100%;
+  max-width: 720px;
+  height: auto;
+  display: block;
+}
+
+.browser-node text {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  fill: var(--ink);
+}
+
+.browser-node .node-label {
+  font-weight: 600;
+  fill: var(--ink);
+}
+
+.browser-node .node-sub {
+  fill: var(--mute);
+  font-size: 11px;
+}
+
+.relay-node rect {
+  filter: url(#glow-blind);
+}
+
+.relay-node .blind-badge {
+  fill: var(--mute);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.flow-arrow {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+  marker-end: url(#arrowhead);
+}
+
+.flow-arrow.subtle {
+  stroke: var(--hairline);
+  stroke-dasharray: 6 4;
+}
+
+.flow-label {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  fill: var(--mute);
+  text-anchor: middle;
+}
+
+.flow-label strong {
+  fill: var(--ink);
+}
+
+.flow-step {
+  font-family: var(--font-display);
+  font-size: 18px;
+  fill: var(--ink);
+  text-anchor: middle;
+}
+
+.steps-panel {
+  margin-top: var(--space-8);
+}
+
+.step-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  background: var(--ink);
+  color: var(--canvas);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 400;
+  flex-shrink: 0;
+}
+
+.step-row {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--hairline-soft);
+}
+
+.step-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.step-row strong {
+  min-width: 140px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.limitations-panel {
+  margin-top: var(--space-8);
+}
+
+.limitations-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.limitation-item {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--soft-cloud);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+}
+
+.limitation-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--charcoal);
+}
+
+.limitation-text strong {
+  display: block;
+  margin-bottom: var(--space-1);
+  color: var(--ink);
+}
+
+.limitation-text span {
+  color: var(--mute);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.security-honest-panel {
+  margin-top: var(--space-8);
+}
+
+.security-honest-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.security-honest-item {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--soft-cloud);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+}
+
+.security-honest-item.positive .honest-icon {
+  color: var(--success);
+}
+
+.security-honest-item.caveat .honest-icon {
+  color: var(--charcoal);
+}
+
+.security-honest-item.negative .honest-icon {
+  color: var(--sale);
+}
+
+.honest-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.honest-text strong {
+  display: block;
+  margin-bottom: var(--space-1);
+  color: var(--ink);
+}
+
+.honest-text span {
+  color: var(--mute);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  .flow-svg {
+    min-width: 720px;
+  }
+
+  .step-row {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .step-row strong {
+    min-width: 0;
+  }
+
+  .limitation-item,
+  .security-honest-item {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+}

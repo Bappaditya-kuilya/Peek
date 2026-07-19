@@ -30,6 +30,7 @@ export function ReceiverScreen() {
   const [now, setNow] = useState(Date.now());
   const [statusMessage, setStatusMessage] = useState('');
   const [statusDanger, setStatusDanger] = useState(false);
+  const [connectionTrouble, setConnectionTrouble] = useState(false);
   const [joined, setJoined] = useState(false);
   const [transportMode, setTransportMode] = useState(TRANSPORT_WAITING);
   const [sessionExpiresAt, setSessionExpiresAt] = useState(null);
@@ -106,8 +107,13 @@ export function ReceiverScreen() {
       if (state === 'connected') {
         setTransportMode(TRANSPORT_DIRECT);
         setStatusMessage('');
+        setConnectionTrouble(false);
       } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
         setTransportMode((current) => (current === TRANSPORT_DIRECT ? TRANSPORT_RELAY : current));
+        if (state === 'failed') {
+          setConnectionTrouble(true);
+          setStatusMessage('Connection trouble. Retrying…');
+        }
       }
     },
     onDataChannel(channel) {
@@ -115,16 +121,20 @@ export function ReceiverScreen() {
       channel.onopen = () => {
         setTransportMode(TRANSPORT_DIRECT);
         setStatusMessage('');
+        setConnectionTrouble(false);
       };
       channel.onmessage = async (event) => {
         await transfer.handleBinaryMessage(event.data);
       };
       channel.onclose = () => {
         setTransportMode((current) => (current === TRANSPORT_DIRECT ? TRANSPORT_RELAY : current));
+        setConnectionTrouble(true);
+        setStatusMessage('Connection lost. Retrying…');
       };
     },
     onFallbackNeeded() {
-      setStatusMessage('Taking longer than usual. Make sure the other device screen is on.');
+      setConnectionTrouble(true);
+      setStatusMessage('Connection trouble. Retrying…');
     },
   });
 
@@ -183,11 +193,11 @@ export function ReceiverScreen() {
   const timerClass = remaining <= 60 * 1000 ? 'critical' : remaining <= 5 * 60 * 1000 ? 'warning' : '';
 
   if (!fullLinkMode) {
-    return <ReceiverPendingView mode="missing-key" statusMessage={statusMessage} statusDanger={statusDanger} />;
+    return <ReceiverPendingView mode="missing-key" statusMessage={statusMessage} statusDanger={statusDanger} connectionTrouble={connectionTrouble} onRetry={() => { setConnectionTrouble(false); setStatusMessage(''); webRtc.createPeerConnection(); }} />;
   }
 
   if (!joined) {
-    return <ReceiverPendingView mode="connecting" statusMessage={statusMessage} statusDanger={statusDanger} />;
+    return <ReceiverPendingView mode="connecting" statusMessage={statusMessage} statusDanger={statusDanger} connectionTrouble={connectionTrouble} onRetry={() => { setConnectionTrouble(false); setStatusMessage(''); webRtc.createPeerConnection(); }} />;
   }
 
   return (

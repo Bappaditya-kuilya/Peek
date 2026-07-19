@@ -9,6 +9,7 @@ import { useSenderSessionCoordinator } from '../hooks/useSessionCoordinator.js';
 import { useSession } from '../hooks/useSession.js';
 import { useTransfer } from '../hooks/useTransfer.js';
 import { useWebRTC } from '../hooks/useWebRTC.js';
+import { getDeviceId } from '../utils/deviceIdentity.js';
 import { safeBaseName } from '../shared/sanitize.js';
 import {
   TRANSPORT_DIRECT,
@@ -59,6 +60,7 @@ export function SenderScreen() {
   const [statusMessage, setStatusMessage] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [peerConnected, setPeerConnected] = useState(false);
+  const [connectionTrouble, setConnectionTrouble] = useState(false);
   const [transportMode, setTransportMode] = useState(TRANSPORT_WAITING);
   const [transferStarted, setTransferStarted] = useState(false);
   const { createSession, killSession, session } = useSession();
@@ -134,8 +136,13 @@ export function SenderScreen() {
       if (state === 'connected') {
         setTransportMode(TRANSPORT_DIRECT);
         setStatusMessage('');
+        setConnectionTrouble(false);
       } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
         setTransportMode((current) => (current === TRANSPORT_DIRECT ? TRANSPORT_RELAY : current));
+        if (state === 'failed') {
+          setConnectionTrouble(true);
+          setStatusMessage('Connection trouble. Retrying…');
+        }
       }
     },
     onDataChannel(channel) {
@@ -143,6 +150,9 @@ export function SenderScreen() {
       channel.onopen = async () => {
         setTransportMode(TRANSPORT_DIRECT);
         setStatusMessage('');
+        setConnectionTrouble(false);
+        const deviceId = await getDeviceId();
+        webRtc.sendDeviceId(deviceId);
         if (!transferStartedRef.current && selectedFiles.length) {
           transferStartedRef.current = true;
           setTransferStarted(true);
@@ -157,10 +167,15 @@ export function SenderScreen() {
       };
       channel.onclose = () => {
         setTransportMode((current) => (current === TRANSPORT_DIRECT ? TRANSPORT_RELAY : current));
+        setConnectionTrouble(true);
+        setStatusMessage('Connection lost. Retrying…');
       };
     },
+    onDeviceId(peerDeviceId) {
+    },
     onFallbackNeeded() {
-      setStatusMessage('Taking longer than usual. Make sure the other device screen is on.');
+      setConnectionTrouble(true);
+      setStatusMessage('Connection trouble. Retrying…');
     },
   });
 
@@ -289,8 +304,14 @@ export function SenderScreen() {
           <SenderActiveView
             activity={activity}
             clipboard={clipboard}
+            connectionTrouble={connectionTrouble}
             onDownload={downloadFile}
             onKill={handleKillSession}
+            onRetry={() => {
+              setConnectionTrouble(false);
+              setStatusMessage('');
+              webRtc.createPeerConnection({ createChannel: true });
+            }}
             onSendBack={handleSendBackFiles}
             peerConnected={peerConnected}
             peekLink={peekLink}

@@ -61,10 +61,28 @@ All file data is encrypted client-side before transmission. The relay server han
 | Component | Technology |
 |-----------|-----------|
 | Frontend | React 18, Vite |
-| Relay | Node.js, Express, WebSocket |
+| Relay | Cloudflare Workers, Durable Objects (SQLite), WebSockets (Hibernation API) |
 | Receiver | Vanilla JavaScript (zero dependencies) |
-| Encryption | Web Crypto API |
-| Hosting | Vercel (frontend), Render (relay) |
+| Encryption | Web Crypto API (AES-256-GCM) |
+| Hosting | Vercel (frontend), Cloudflare Workers (relay) |
+
+[**Launch Peek**](https://peekapp.vercel.app)
+
+---
+
+## Self-Host
+
+Deploy your own relay and frontend:
+
+```bash
+# Frontend (any static host — Vercel, Netlify, Cloudflare Pages)
+cd web && npm install && npm run build
+
+# Relay (Cloudflare Workers)
+cd cloudflare-relay && npm install && wrangler deploy
+```
+
+For complete guide including environment variables, TURN setup, and custom domains, see the [Self-Host page in the webapp](https://peekapp.vercel.app/self-host).
 
 ---
 
