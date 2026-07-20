@@ -29,6 +29,8 @@ export function useSenderSessionCoordinator({
 }) {
   const hasSentOfferRef = useRef(false);
   const hasConnectedPeerRef = useRef(false);
+  const selectedFilesRef = useRef(selectedFiles);
+  selectedFilesRef.current = selectedFiles;
 
   useEffect(() => {
     if (!session) return undefined;
@@ -81,11 +83,11 @@ export function useSenderSessionCoordinator({
           }
           fallbackTimeoutRef.current = window.setTimeout(async () => {
             if (!webRtc.dataChannelRef.current || webRtc.dataChannelRef.current.readyState !== 'open') {
-              if (!transferStartedRef.current && selectedFiles.length) {
+              if (!transferStartedRef.current && selectedFilesRef.current.length) {
                 transferStartedRef.current = true;
                 setTransferStarted(true);
                 await transfer.sendFiles(
-                  selectedFiles.map((entry) => entry.file),
+                  selectedFilesRef.current.map((entry) => entry.file),
                   transportRef.current
                 );
               }
