@@ -74,6 +74,8 @@ export function SenderScreen() {
   const nextFileIdRef = useRef(0);
   const transferStartedRef = useRef(transferStarted);
   transferStartedRef.current = transferStarted;
+  const selectedFilesRef = useRef(selectedFiles);
+  selectedFilesRef.current = selectedFiles;
   const thumbnailUrlsRef = useRef({});
 
   useEffect(() => {
@@ -153,11 +155,11 @@ export function SenderScreen() {
         setConnectionTrouble(false);
         const deviceId = await getDeviceId();
         webRtc.sendDeviceId(deviceId);
-        if (!transferStartedRef.current && selectedFiles.length) {
+        if (!transferStartedRef.current && selectedFilesRef.current.length) {
           transferStartedRef.current = true;
           setTransferStarted(true);
           await transfer.sendFiles(
-            selectedFiles.map((entry) => entry.file),
+            selectedFilesRef.current.map((entry) => entry.file),
             transportRef.current
           );
         }
