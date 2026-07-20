@@ -219,7 +219,7 @@ export function DataFlowExplainer() {
                         We&apos;re honest about what Peek <strong>doesn&apos;t</strong> do yet:
                       </p>
                       <ul className="detail-list" style={{color: 'var(--charcoal)'}}>
-                        <li><strong>TURN fallback:</strong> Not yet deployed. Direct WebRTC fails on symmetric NAT / strict firewalls — falls back to relay only.</li>
+                        <li><strong>TURN fallback:</strong> Requires Cloudflare Realtime TURN setup (see repo for instructions). Falls back to relay when TURN is unconfigured.</li>
                         <li><strong>Relay routing:</strong> Cloudflare Worker routes regionally; not yet geo-pinned. Metadata (IP region) visible to Cloudflare.</li>
                         <li><strong>No forward secrecy:</strong> Session key derives from static secret. Compromise of one session key exposes that session only.</li>
                         <li><strong>No audit log:</strong> No tamper-evident log of relay operations yet.</li>
@@ -280,7 +280,7 @@ const ciphertext = await crypto.subtle.encrypt(
                   <dt>Session expiry</dt>
                   <dd>60 min auto-expire + manual kill from either side</dd>
                   <dt>TURN</dt>
-                  <dd>Not yet deployed (direct P2P only)</dd>
+                  <dd>Cloudflare Realtime TURN (when configured) → relay fallback</dd>
                 </dl>
               </div>
 
