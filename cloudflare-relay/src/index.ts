@@ -1,5 +1,7 @@
 export interface Env {
 	PEEK_SESSION: DurableObjectNamespace;
+	REALTIME_TURN_TOKEN_ID?: string;
+	REALTIME_TURN_TOKEN_SECRET?: string;
 }
 
 interface ReceiverInfo {
@@ -137,10 +139,72 @@ export class PeekSession {
 			addCorsHeaders(response.headers, origin);
 			return response;
 		}
+		if (request.method === "GET" && url2.pathname === "/turn-credentials") {
+			const response = await this.getTurnCredentials();
+			addCorsHeaders(response.headers, origin);
+			return response;
+		}
 
 		const response = new Response("Not found", { status: 404 });
 		addCorsHeaders(response.headers, origin);
 		return response;
+	}
+
+	private async getTurnCredentials(): Promise<Response> {
+		try {
+			const tokenId = this.env.REALTIME_TURN_TOKEN_ID;
+			const tokenSecret = this.env.REALTIME_TURN_TOKEN_SECRET;
+
+			if (!tokenId || !tokenSecret) {
+				return new Response(JSON.stringify({ iceServers: null }), {
+					headers: { "Content-Type": "application/json" },
+				});
+			}
+
+			const response = await fetch(
+				`https://rtc.live.cloudflare.com/v1/turn/keys/${tokenId}/credentials/generate`,
+				{
+					method: "POST",
+					headers: {
+						"Authorization": `Bearer ${tokenSecret}`,
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({ ttl: 3600 }),
+				}
+			);
+
+			if (!response.ok) {
+				return new Response(JSON.stringify({ iceServers: null }), {
+					headers: { "Content-Type": "application/json" },
+				});
+			}
+
+			const data = await response.json() as {
+				iceServers: { urls: string[]; username: string; credential: string };
+			};
+
+			// Filter port 53 URLs (blocked by browsers)
+			const filteredUrls = data.iceServers.urls.filter(
+				(url: string) => !url.includes(":53")
+			);
+
+			return new Response(JSON.stringify({
+				iceServers: [
+					{ urls: "stun:stun.cloudflare.com:3478" },
+					{
+						urls: filteredUrls,
+						username: data.iceServers.username,
+						credential: data.iceServers.credential,
+					},
+				],
+			}), {
+				headers: { "Content-Type": "application/json" },
+			});
+		} catch {
+			return new Response(JSON.stringify({ iceServers: null }), {
+				headers: { "Content-Type": "application/json" },
+			});
+		}
 	}
 
 	private async createSession(request: Request): Promise<Response> {

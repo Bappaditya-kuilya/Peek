@@ -35,22 +35,22 @@ afterEach(() => {
 });
 
 describe('useWebRTC ICE restart', () => {
-  it('attempts ICE restart on first failure, not fallback', () => {
+  it('attempts ICE restart on first failure, not fallback', async () => {
     const onFallbackNeeded = vi.fn();
     const { result } = renderHook(() => useWebRTC({ onFallbackNeeded }));
 
-    act(() => result.current.createPeerConnection());
+    await act(async () => { await result.current.createPeerConnection(); });
     act(() => fakePeer.setState('failed'));
 
     expect(fakePeer.restartIceCalls).toBe(1);
     expect(onFallbackNeeded).not.toHaveBeenCalled();
   });
 
-  it('attempts ICE restart on second failure, not fallback', () => {
+  it('attempts ICE restart on second failure, not fallback', async () => {
     const onFallbackNeeded = vi.fn();
     const { result } = renderHook(() => useWebRTC({ onFallbackNeeded }));
 
-    act(() => result.current.createPeerConnection());
+    await act(async () => { await result.current.createPeerConnection(); });
     act(() => fakePeer.setState('failed'));
     act(() => fakePeer.setState('failed'));
 
@@ -58,11 +58,11 @@ describe('useWebRTC ICE restart', () => {
     expect(onFallbackNeeded).not.toHaveBeenCalled();
   });
 
-  it('calls onFallbackNeeded after max restarts (2)', () => {
+  it('calls onFallbackNeeded after max restarts (2)', async () => {
     const onFallbackNeeded = vi.fn();
     const { result } = renderHook(() => useWebRTC({ onFallbackNeeded }));
 
-    act(() => result.current.createPeerConnection());
+    await act(async () => { await result.current.createPeerConnection(); });
     act(() => fakePeer.setState('failed'));
     act(() => fakePeer.setState('failed'));
     act(() => fakePeer.setState('failed'));
@@ -71,11 +71,11 @@ describe('useWebRTC ICE restart', () => {
     expect(onFallbackNeeded).toHaveBeenCalledTimes(1);
   });
 
-  it('resets restart count on successful connection', () => {
+  it('resets restart count on successful connection', async () => {
     const onFallbackNeeded = vi.fn();
     const { result } = renderHook(() => useWebRTC({ onFallbackNeeded }));
 
-    act(() => result.current.createPeerConnection());
+    await act(async () => { await result.current.createPeerConnection(); });
     act(() => fakePeer.setState('failed'));
     act(() => fakePeer.setState('connected'));
 

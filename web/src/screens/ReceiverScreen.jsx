@@ -193,11 +193,11 @@ export function ReceiverScreen() {
   const timerClass = remaining <= 60 * 1000 ? 'critical' : remaining <= 5 * 60 * 1000 ? 'warning' : '';
 
   if (!fullLinkMode) {
-    return <ReceiverPendingView mode="missing-key" statusMessage={statusMessage} statusDanger={statusDanger} connectionTrouble={connectionTrouble} onRetry={() => { setConnectionTrouble(false); setStatusMessage(''); webRtc.createPeerConnection(); }} />;
+    return <ReceiverPendingView mode="missing-key" statusMessage={statusMessage} statusDanger={statusDanger} connectionTrouble={connectionTrouble} onRetry={async () => { setConnectionTrouble(false); setStatusMessage(''); await webRtc.createPeerConnection(); }} />;
   }
 
   if (!joined) {
-    return <ReceiverPendingView mode="connecting" statusMessage={statusMessage} statusDanger={statusDanger} connectionTrouble={connectionTrouble} onRetry={() => { setConnectionTrouble(false); setStatusMessage(''); webRtc.createPeerConnection(); }} />;
+    return <ReceiverPendingView mode="connecting" statusMessage={statusMessage} statusDanger={statusDanger} connectionTrouble={connectionTrouble} onRetry={async () => { setConnectionTrouble(false); setStatusMessage(''); await webRtc.createPeerConnection(); }} />;
   }
 
   return (

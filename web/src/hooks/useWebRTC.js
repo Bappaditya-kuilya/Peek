@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { recordIceEvent, shouldWarnTurn } from '../shared/iceMonitor.js';
+import { getRelayHttpUrl } from '../utils/relayConfig.js';
 import * as Sentry from '@sentry/react';
 
 const DEV_ICE_SERVERS = [
@@ -22,7 +23,7 @@ const DEV_ICE_SERVERS = [
   },
 ];
 
-function getIceServers() {
+function getStaticIceServers() {
   const stunServers = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
@@ -47,7 +48,6 @@ function getIceServers() {
     return DEV_ICE_SERVERS;
   }
 
-  // Production fallback: openrelay.metered.ca as last resort when no Cloudflare TURN configured
   return [
     ...stunServers,
     {
@@ -66,6 +66,24 @@ function getIceServers() {
       credential: 'openrelayproject',
     },
   ];
+}
+
+async function fetchTurnCredentials() {
+  try {
+    const relayUrl = getRelayHttpUrl();
+    const response = await fetch(`${relayUrl}/turn-credentials`);
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.iceServers || null;
+  } catch {
+    return null;
+  }
+}
+
+async function getIceServers() {
+  const cloudflareTurn = await fetchTurnCredentials();
+  if (cloudflareTurn) return cloudflareTurn;
+  return getStaticIceServers();
 }
 
 export function useWebRTC({
@@ -146,8 +164,8 @@ export function useWebRTC({
     };
   }
 
-  function createPeerConnection({ createChannel = false } = {}) {
-    const connection = new RTCPeerConnection({ iceServers: getIceServers() });
+  async function createPeerConnection({ createChannel = false } = {}) {
+    const connection = new RTCPeerConnection({ iceServers: await getIceServers() });
     peerConnectionRef.current = connection;
     bindConnectionEvents(connection);
 
@@ -164,14 +182,14 @@ export function useWebRTC({
   }
 
   async function createOffer() {
-    const connection = peerConnectionRef.current || createPeerConnection({ createChannel: true });
+    const connection = peerConnectionRef.current || await createPeerConnection({ createChannel: true });
     const offer = await connection.createOffer();
     await connection.setLocalDescription(offer);
     return offer;
   }
 
   async function acceptOffer(offer) {
-    const connection = peerConnectionRef.current || createPeerConnection();
+    const connection = peerConnectionRef.current || await createPeerConnection();
     await connection.setRemoteDescription(offer);
     const answer = await connection.createAnswer();
     await connection.setLocalDescription(answer);
