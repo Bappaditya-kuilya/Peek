@@ -31,8 +31,8 @@ export function DataFlowExplainer() {
                       src="/images/data-flow-diagram.png"
                       alt="Diagram: end-to-end encrypted file transfer. Preferred path (blue dashed) is direct WebRTC P2P, end-to-end encrypted with the relay not used. Fallback path (gray dashed) routes encrypted chunks through the Cloudflare Worker plus Durable Object relay when a direct connection fails. The relay never sees plaintext — only AES-GCM ciphertext, session IDs, and peer presence."
                       className="flow-diagram-img"
-                      width="1600"
-                      height="1000"
+                      width="1400"
+                      height="875"
                       loading="lazy"
                     />
                   </figure>
