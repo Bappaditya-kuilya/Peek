@@ -1144,6 +1144,14 @@ textarea:focus-visible {
   display: block;
 }
 
+.flow-diagram-img {
+  width: 100%;
+  max-width: 900px;
+  height: auto;
+  display: block;
+  border-radius: var(--radius-md, 8px);
+}
+
 .browser-node text {
   font-family: var(--font-sans);
   font-size: 12px;
