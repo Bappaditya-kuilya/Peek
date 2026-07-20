@@ -27,14 +27,14 @@ export function DataFlowExplainer() {
                   </h2>
 
                   <figure className="flow-diagram" role="img" aria-labelledby="diagram-title">
-                    <svg viewBox="0 0 720 280" className="flow-svg" aria-hidden="true">
+                    <svg viewBox="0 0 760 340" className="flow-svg" aria-hidden="true">
                       <defs>
-                        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-                          <polygon points="0 0, 10 3.5, 0 7" fill="var(--ink)" />
+                        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto">
+                          <polygon points="0 0, 10 3.5, 0 7" fill="#111111" />
                         </marker>
                         <linearGradient id="grad-browser" x1="0%" y1="0%" x2="0%" y2="100%">
-                          <stop offset="0%" stopColor="var(--canvas)" />
-                          <stop offset="100%" stopColor="var(--soft-cloud)" />
+                          <stop offset="0%" stopColor="#ffffff" />
+                          <stop offset="100%" stopColor="#f7f7f8" />
                         </linearGradient>
                         <linearGradient id="grad-relay" x1="0%" y1="0%" x2="0%" y2="100%">
                           <stop offset="0%" stopColor="#f0f0f5" />
@@ -43,128 +43,114 @@ export function DataFlowExplainer() {
                         <filter id="shadow-soft" x="-20%" y="-20%" width="140%" height="140%">
                           <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="rgba(0,0,0,0.06)" />
                         </filter>
-                        <filter id="glow-blind" x="-50%" y="-50%" width="200%" height="200%">
-                          <feGaussianBlur stdDeviation="8" result="blur" />
-                          <feMerge>
-                            <feMergeNode in="blur" />
-                            <feMergeNode in="SourceGraphic" />
-                          </feMerge>
-                        </filter>
                       </defs>
 
-                      {/* Browser A - Sender */}
-                      <g className="browser-node" transform="translate(40, 40)" filter="url(#shadow-soft)">
-                        <rect x="0" y="0" width="200" height="200" rx="16" fill="url(#grad-browser)" stroke="var(--hairline)" stroke-width="1" />
-                        <rect x="0" y="0" width="200" height="40" rx="16" fill="var(--soft-cloud)" stroke="var(--hairline)" stroke-width="1" />
-                        <circle cx="12" cy="20" r="6" fill="#ff5f57" />
-                        <circle cx="30" cy="20" r="6" fill="#ffbd2e" />
-                        <circle cx="48" cy="20" r="6" fill="#28ca42" />
-                        <rect x="12" y="56" width="176" height="128" rx="8" fill="var(--ink)" opacity="0.04" />
-                        <rect x="24" y="72" width="60" height="60" rx="8" fill="var(--ink)" opacity="0.12" />
-                        <rect x="104" y="72" width="88" height="20" rx="4" fill="var(--ink)" opacity="0.1" />
-                        <rect x="104" y="104" width="88" height="14" rx="3" fill="var(--ink)" opacity="0.06" />
-                        <rect x="104" y="132" width="60" height="14" rx="3" fill="var(--ink)" opacity="0.06" />
-                        <text x="100" y="190" text-anchor="middle" font-family="var(--font-sans)" font-size="12" fill="var(--mute)" font-weight="500">Sender browser</text>
-                        <text x="100" y="206" text-anchor="middle" font-family="var(--font-sans)" font-size="11" fill="var(--stone)">Encrypts files locally</text>
-
-                        {/* Encryption badge */}
-                        <g transform="translate(150, 10)" className="badge">
-                          <rect x="0" y="0" width="56" height="24" rx="12" fill="var(--success)" opacity="0.15" stroke="var(--success)" stroke-width="1" />
-                          <text x="28" y="16" text-anchor="middle" font-family="var(--font-sans)" font-size="10" fill="var(--success)" font-weight="600">AES-GCM</text>
-                        </g>
-                      </g>
-
-                      {/* Arrow: Browser A -> Relay */}
-                      <path
-                        d="M 240 140 Q 290 140, 340 140"
-                        stroke="var(--ink)"
-                        stroke-width="2"
-                        fill="none"
-                        marker-end="url(#arrowhead)"
-                        stroke-dasharray="6 4"
-                        opacity="0.4"
-                      />
-                      <text x="290" y="130" text-anchor="middle" font-family="var(--font-sans)" font-size="11" fill="var(--mute)" opacity="0.7">WebSocket (signaling)</text>
-
-                      {/* Relay Server (Cloudflare Worker + Durable Object) */}
-                      <g className="relay-node" transform="translate(280, 70)" filter="url(#shadow-soft)">
-                        <rect x="0" y="0" width="160" height="140" rx="16" fill="url(#grad-relay)" stroke="var(--hairline)" stroke-width="1" />
-                        <rect x="0" y="0" width="160" height="36" rx="16" fill="#e8e8ed" stroke="var(--hairline)" stroke-width="1" />
-                        <rect x="12" y="10" width="12" height="12" rx="2" fill="#ffbd2e" />
-                        <text x="80" y="95" text-anchor="middle" font-family="var(--font-display)" font-size="32" fill="var(--ink)" font-weight="400">☁</text>
-                        <text x="80" y="128" text-anchor="middle" font-family="var(--font-sans)" font-size="12" fill="var(--mute)" font-weight="500">Relay (Worker + DO)</text>
-                        <text x="80" y="148" text-anchor="middle" font-family="var(--font-sans)" font-size="11" fill="var(--stone)">WebSocket + SQLite</text>
-
-                        {/* Blind relay badge */}
-                        <g className="badge" transform="translate(40, -12)">
-                          <rect x="0" y="0" width="80" height="20" rx="10" fill="var(--warning)" opacity="0.15" stroke="var(--warning)" stroke-width="1" />
-                          <text x="40" y="13.5" text-anchor="middle" font-family="var(--font-sans)" font-size="9" fill="var(--warning)" font-weight="600">SEES CIPHERTEXT ONLY</text>
-                        </g>
-
-                        {/* What relay sees */}
-                        <rect x="16" y="158" width="128" height="60" rx="8" fill="var(--ink)" opacity="0.03" stroke="var(--hairline)" stroke-width="0.5" />
-                        <text x="80" y="175" text-anchor="middle" font-family="var(--font-sans)" font-size="10" fill="var(--mute)" font-weight="500">Relay sees:</text>
-                        <text x="80" y="192" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--stone)">
-                          {`{type:"encrypted-chunk", data:"0x7f..."}`}
-                        </text>
-                        <text x="80" y="208" text-anchor="middle" font-family="var(--font-sans)" font-size="9" fill="var(--stone)">
-                          Session ID, peer presence, TTL
-                        </text>
-                      </g>
-
-                      {/* Arrow: Relay -> Browser B */}
-                      <path
-                        d="M 440 140 Q 490 140, 540 140"
-                        stroke="var(--ink)"
-                        stroke-width="2"
-                        fill="none"
-                        marker-end="url(#arrowhead)"
-                        stroke-dasharray="6 4"
-                        opacity="0.4"
-                      />
-                      <text x="490" y="130" text-anchor="middle" font-family="var(--font-sans)" font-size="11" fill="var(--mute)" opacity="0.7">WebSocket (relay)</text>
-
-                      {/* Browser B - Receiver */}
-                      <g className="browser-node" transform="translate(520, 40)" filter="url(#shadow-soft)">
-                        <rect x="0" y="0" width="200" height="200" rx="16" fill="url(#grad-browser)" stroke="var(--hairline)" stroke-width="1" />
-                        <rect x="0" y="0" width="200" height="40" rx="16" fill="var(--soft-cloud)" stroke="var(--hairline)" stroke-width="1" />
-                        <circle cx="12" cy="20" r="6" fill="#ff5f57" />
-                        <circle cx="30" cy="20" r="6" fill="#ffbd2e" />
-                        <circle cx="48" cy="20" r="6" fill="#28ca42" />
-                        <rect x="12" y="56" width="176" height="128" rx="8" fill="var(--ink)" opacity="0.04" />
-                        <rect x="24" y="72" width="60" height="60" rx="8" fill="var(--success-bright)" opacity="0.15" />
-                        <rect x="104" y="72" width="88" height="20" rx="4" fill="var(--success-bright)" opacity="0.2" />
-                        <rect x="104" y="104" width="88" height="14" rx="3" fill="var(--success-bright)" opacity="0.12" />
-                        <rect x="104" y="132" width="60" height="14" rx="3" fill="var(--success-bright)" opacity="0.12" />
-                        <text x="100" y="190" text-anchor="middle" font-family="var(--font-sans)" font-size="12" fill="var(--mute)" font-weight="500">Receiver browser</text>
-                        <text x="100" y="206" text-anchor="middle" font-family="var(--font-sans)" font-size="11" fill="var(--stone)">Decrypts locally</text>
-
-                        {/* Decryption badge */}
-                        <g transform="translate(150, 10)" className="badge">
-                          <rect x="0" y="0" width="56" height="24" rx="12" fill="var(--success)" opacity="0.15" stroke="var(--success)" stroke-width="1" />
-                          <text x="28" y="16" text-anchor="middle" font-family="var(--font-sans)" font-size="10" fill="var(--success)" font-weight="600">AES-GCM</text>
-                        </g>
-                      </g>
-
-                      {/* Direct WebRTC path (dashed, overlay) */}
-                      <g className="direct-path" opacity="0.5">
+                      {/* Direct WebRTC path (overlay, behind nodes) */}
+                      <g className="direct-path" opacity="0.55">
                         <path
-                          d="M 240 180 Q 360 60, 480 180"
-                          stroke="var(--info)"
+                          d="M 120 70 Q 380 12, 640 70"
+                          stroke="#1151ff"
                           stroke-width="2"
                           fill="none"
                           marker-end="url(#arrowhead)"
                           stroke-dasharray="8 4"
                         />
-                        <text x="360" y="50" text-anchor="middle" font-family="var(--font-sans)" font-size="11" fill="var(--info)" font-weight="500">Preferred: Direct WebRTC (P2P)</text>
-                        <text x="360" y="66" text-anchor="middle" font-family="var(--font-sans)" font-size="10" fill="var(--mute)">Encrypted data channel, no relay hop</text>
+                        <text x="380" y="26" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#1151ff" font-weight="500">Preferred: Direct WebRTC (P2P)</text>
+                        <text x="380" y="42" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#707072">Encrypted data channel, no relay hop</text>
+                      </g>
+
+                      {/* Browser A - Sender */}
+                      <g className="browser-node" transform="translate(20, 70)" filter="url(#shadow-soft)">
+                        <rect x="0" y="0" width="200" height="200" rx="16" fill="url(#grad-browser)" stroke="#e0e0e2" stroke-width="1" />
+                        <rect x="0" y="0" width="200" height="40" rx="16" fill="#f7f7f8" stroke="#e0e0e2" stroke-width="1" />
+                        <circle cx="12" cy="20" r="6" fill="#ff5f57" />
+                        <circle cx="30" cy="20" r="6" fill="#ffbd2e" />
+                        <circle cx="48" cy="20" r="6" fill="#28ca42" />
+                        <rect x="12" y="56" width="176" height="128" rx="8" fill="#111111" opacity="0.04" />
+                        <rect x="24" y="72" width="60" height="60" rx="8" fill="#111111" opacity="0.12" />
+                        <rect x="104" y="72" width="88" height="20" rx="4" fill="#111111" opacity="0.1" />
+                        <rect x="104" y="104" width="88" height="14" rx="3" fill="#111111" opacity="0.06" />
+                        <rect x="104" y="132" width="60" height="14" rx="3" fill="#111111" opacity="0.06" />
+                        <text x="100" y="190" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" fill="#707072" font-weight="500">Sender browser</text>
+                        <text x="100" y="206" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#9e9ea0">Encrypts files locally</text>
+
+                        <g transform="translate(138, 12)" className="badge">
+                          <rect x="0" y="0" width="56" height="24" rx="12" fill="#007d48" opacity="0.15" stroke="#007d48" stroke-width="1" />
+                          <text x="28" y="16" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#007d48" font-weight="600">AES-GCM</text>
+                        </g>
+                      </g>
+
+                      {/* Arrow: Browser A -> Relay */}
+                      <path
+                        d="M 222 170 L 296 170"
+                        stroke="#111111"
+                        stroke-width="2"
+                        fill="none"
+                        marker-end="url(#arrowhead)"
+                        stroke-dasharray="6 4"
+                        opacity="0.45"
+                      />
+                      <text x="259" y="160" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#707072" opacity="0.8">WebSocket (signaling)</text>
+
+                      {/* Relay Server (Cloudflare Worker + Durable Object) */}
+                      <g className="relay-node" transform="translate(300, 55)" filter="url(#shadow-soft)">
+                        <rect x="0" y="0" width="160" height="200" rx="16" fill="url(#grad-relay)" stroke="#e0e0e2" stroke-width="1" />
+                        <rect x="0" y="0" width="160" height="36" rx="16" fill="#e8e8ed" stroke="#e0e0e2" stroke-width="1" />
+                        <rect x="12" y="10" width="12" height="12" rx="2" fill="#ffbd2e" />
+                        <text x="80" y="100" text-anchor="middle" font-family="Inter, sans-serif" font-size="32" fill="#111111" font-weight="400">☁</text>
+                        <text x="80" y="132" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" fill="#707072" font-weight="500">Relay (Worker + DO)</text>
+                        <text x="80" y="152" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#9e9ea0">WebSocket + SQLite</text>
+
+                        <g className="badge" transform="translate(40, -16)">
+                          <rect x="0" y="0" width="80" height="20" rx="10" fill="#39393b" opacity="0.12" stroke="#39393b" stroke-width="1" />
+                          <text x="40" y="13.5" text-anchor="middle" font-family="Inter, sans-serif" font-size="9" fill="#39393b" font-weight="600">SEES CIPHERTEXT ONLY</text>
+                        </g>
+
+                        <rect x="12" y="162" width="136" height="34" rx="8" fill="#111111" opacity="0.03" stroke="#e0e0e2" stroke-width="0.5" />
+                        <text x="80" y="176" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#707072" font-weight="500">Relay sees:</text>
+                        <text x="80" y="190" text-anchor="middle" font-family="ui-monospace, monospace" font-size="9" fill="#9e9ea0">
+                          {`{type:"encrypted-chunk", data:"0x7f..."}`}
+                        </text>
+                      </g>
+
+                      {/* Arrow: Relay -> Browser B */}
+                      <path
+                        d="M 462 170 L 536 170"
+                        stroke="#111111"
+                        stroke-width="2"
+                        fill="none"
+                        marker-end="url(#arrowhead)"
+                        stroke-dasharray="6 4"
+                        opacity="0.45"
+                      />
+                      <text x="499" y="160" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#707072" opacity="0.8">WebSocket (relay)</text>
+
+                      {/* Browser B - Receiver */}
+                      <g className="browser-node" transform="translate(540, 70)" filter="url(#shadow-soft)">
+                        <rect x="0" y="0" width="200" height="200" rx="16" fill="url(#grad-browser)" stroke="#e0e0e2" stroke-width="1" />
+                        <rect x="0" y="0" width="200" height="40" rx="16" fill="#f7f7f8" stroke="#e0e0e2" stroke-width="1" />
+                        <circle cx="12" cy="20" r="6" fill="#ff5f57" />
+                        <circle cx="30" cy="20" r="6" fill="#ffbd2e" />
+                        <circle cx="48" cy="20" r="6" fill="#28ca42" />
+                        <rect x="12" y="56" width="176" height="128" rx="8" fill="#111111" opacity="0.04" />
+                        <rect x="24" y="72" width="60" height="60" rx="8" fill="#1eaa52" opacity="0.15" />
+                        <rect x="104" y="72" width="88" height="20" rx="4" fill="#1eaa52" opacity="0.2" />
+                        <rect x="104" y="104" width="88" height="14" rx="3" fill="#1eaa52" opacity="0.12" />
+                        <rect x="104" y="132" width="60" height="14" rx="3" fill="#1eaa52" opacity="0.12" />
+                        <text x="100" y="190" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" fill="#707072" font-weight="500">Receiver browser</text>
+                        <text x="100" y="206" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#9e9ea0">Decrypts locally</text>
+
+                        <g transform="translate(138, 12)" className="badge">
+                          <rect x="0" y="0" width="56" height="24" rx="12" fill="#007d48" opacity="0.15" stroke="#007d48" stroke-width="1" />
+                          <text x="28" y="16" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#007d48" font-weight="600">AES-GCM</text>
+                        </g>
                       </g>
 
                       {/* TURN fallback note */}
-                      <g className="turn-note" transform="translate(360, 230)">
-                        <rect x="-120" y="0" width="240" height="36" rx="8" fill="var(--warning)" opacity="0.1" stroke="var(--warning)" stroke-width="1" />
-                        <text x="0" y="14" text-anchor="middle" font-family="var(--font-sans)" font-size="11" fill="var(--warning)" font-weight="500">⚠ TURN fallback when direct P2P fails</text>
-                        <text x="0" y="28" text-anchor="middle" font-family="var(--font-sans)" font-size="10" fill="var(--stone)">Relay sees ciphertext only · TURN server sees encrypted WebRTC packets</text>
+                      <g className="turn-note" transform="translate(380, 290)">
+                        <rect x="-130" y="0" width="260" height="40" rx="8" fill="#39393b" opacity="0.08" stroke="#39393b" stroke-width="1" />
+                        <text x="0" y="15" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#39393b" font-weight="500">⚠ TURN fallback when direct P2P fails</text>
+                        <text x="0" y="30" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#9e9ea0">Relay sees ciphertext only · TURN server sees encrypted WebRTC packets</text>
                       </g>
                     </svg>
 
