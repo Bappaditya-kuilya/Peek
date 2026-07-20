@@ -309,10 +309,10 @@ export function SenderScreen() {
             connectionTrouble={connectionTrouble}
             onDownload={downloadFile}
             onKill={handleKillSession}
-            onRetry={() => {
+            onRetry={async () => {
               setConnectionTrouble(false);
               setStatusMessage('');
-              webRtc.createPeerConnection({ createChannel: true });
+              await webRtc.createPeerConnection({ createChannel: true });
             }}
             onSendBack={handleSendBackFiles}
             peerConnected={peerConnected}
