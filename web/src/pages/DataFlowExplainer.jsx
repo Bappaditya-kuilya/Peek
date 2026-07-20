@@ -290,8 +290,8 @@ const ciphertext = await crypto.subtle.encrypt(
                   <li>✓ Passive network observer — sees only ciphertext</li>
                   <li>✓ Relay operator (Cloudflare) — sees ciphertext + metadata</li>
                   <li>✓ Malicious receiver — only gets files you choose to send</li>
+                  <li>✓ Active MITM on signaling — could disrupt, not decrypt (availability risk only, not confidentiality)</li>
                   <li>✗ Compromised sender browser — keys + URL fragment leaked</li>
-                  <li>✗ Active MITM on signaling — could disrupt, not decrypt</li>
                   <li>✗ Compromised relay + compromised receiver — full access</li>
                 </ul>
               </div>
