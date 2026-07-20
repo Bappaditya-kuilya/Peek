@@ -1351,3 +1351,113 @@ textarea:focus-visible {
     gap: var(--space-2);
   }
 }
+
+/* ------------------------------------------------- Data flow explainer */
+
+.crypto-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-6);
+}
+
+.code-block {
+  margin: 0;
+  padding: var(--space-4);
+  background: var(--soft-cloud);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--charcoal);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.steps-detailed {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-6);
+}
+
+.step-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.step-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: var(--ink);
+  color: var(--canvas);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.detail-list {
+  margin: 0;
+  padding-left: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--mute);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.quick-ref {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-2) var(--space-4);
+}
+
+.quick-ref dt {
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.quick-ref dd {
+  margin: 0;
+  color: var(--mute);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.threat-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--charcoal);
+}
+
+.diagram-caption {
+  margin-top: var(--space-4);
+  color: var(--mute);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.diagram-caption strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+@media (max-width: 880px) {
+  .crypto-grid,
+  .steps-detailed {
+    grid-template-columns: 1fr;
+  }
+}
