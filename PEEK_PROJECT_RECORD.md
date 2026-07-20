@@ -1,6 +1,6 @@
 # Peek — Project Record
 
-Last updated: 2026-07-19. Main is green: relay 20/20, web 32/32, build 121.65 kB gzip.
+Last updated: 2026-07-20. Main is green: relay 20/20, web 32/32, build 121.57 kB gzip.
 
 ## What Peek is
 Browser-only, account-free, install-free file/clipboard transfer. One device
@@ -66,6 +66,12 @@ commits** (not squash), consistent with PRs #2–#8.
 - `AGENTS.md` legacy/forbidden-patterns references
 
 ## Still open (tracked, not blocking)
+- **TURN setup (PR #15)**: Code merged on branch `feat/cloudflare-turn-credentials`.
+  Needs manual steps before deploy:
+  1. Create TURN key in Cloudflare dashboard (Realtime -> TURN Keys)
+  2. Set wrangler secrets: `REALTIME_TURN_TOKEN_ID`, `REALTIME_TURN_TOKEN_SECRET`
+  3. Deploy relay: `wrangler deploy`
+  4. Verify: `curl https://peek-relay.bappadityakuilya.workers.dev/turn-credentials`
 - **Phase 5 backlog** (from the earlier 9/10 plan): real user research, full
   accessibility audit, i18n, performance budgets. Deliberately out of scope for
   this build.
@@ -75,3 +81,6 @@ commits** (not squash), consistent with PRs #2–#8.
 - **Self-host docs** (`SELF_HOST.md`) assume a hardcoded CORS allowed-origins
   list in `cloudflare-relay/src/index.ts` — fine for now, revisit if self-hosting
   adoption grows.
+- **Real cross-network verification**: Cannot be done in automated CI. After TURN
+  setup, test manually with laptop on wifi + phone on cellular data. No automated
+  E2E test exists for this scenario.
