@@ -6,6 +6,7 @@ DIR=$(cd "$(dirname "$0")/.." && pwd)
 SRC="$DIR/src/shared"
 for target in "$DIR/public/receiver" "$DIR/public"; do
   for src in "$SRC"/*.js; do
+    case "$src" in *.test.js) continue;; esac
     name=$(basename "$src")
     sed 's/^export //; /^import /d' "$src" > "$target/inlined-$name"
   done

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "sh scripts/inline-shared.sh",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run"
