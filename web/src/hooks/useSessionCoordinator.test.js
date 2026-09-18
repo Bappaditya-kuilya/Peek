@@ -129,10 +129,12 @@ describe('receiver receiver-join-request → key-grant handshake', () => {
     const wrappedKeyB64 = await wrapSessionKeyForViewer(joinSent.pubKeyJwk, sessionKey);
     await act(async () => {
       FakeSocket.last.fireMessage({ type: 'key-grant', wrappedKeyB64 });
-      await new Promise((r) => setTimeout(r, 0));
     });
-    expect(joined).toBe(true);
-    expect(grantedKey).toBeTruthy();
+    // RSA-OAEP unwrap is slow on loaded runners — poll, don't sleep.
+    await vi.waitFor(() => {
+      expect(joined).toBe(true);
+      expect(grantedKey).toBeTruthy();
+    }, { timeout: 8000 });
     expect(await exportKeyToBase64(grantedKey)).toBe(await exportKeyToBase64(sessionKey));
   });
 });
