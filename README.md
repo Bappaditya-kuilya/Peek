@@ -82,7 +82,7 @@ cd web && npm install && npm run build
 cd cloudflare-relay && npm install && wrangler deploy
 ```
 
-For complete guide including environment variables, TURN setup, and custom domains, see the [Self-Host page in the webapp](https://peekapp.vercel.app/self-host).
+For environment variables, TURN setup, and custom domains, see `web/.env.example` and `cloudflare-relay/wrangler.toml`.
 
 ---
 
@@ -90,13 +90,14 @@ For complete guide including environment variables, TURN setup, and custom domai
 
 ```bash
 git clone https://github.com/Bappaditya-kuilya/Peek.git && cd Peek
-npm install && npm --prefix web install
-npm --prefix relay start &
-npm --prefix web dev
+npm --prefix web install
+npm --prefix cloudflare-relay run dev &
+npm --prefix web run dev
 ```
 
 ```bash
-npm test
+npm test # web tests + build only
+npm --prefix cloudflare-relay test # relay suite (separate)
 ```
 
 ---
@@ -117,14 +118,13 @@ The first public release of Peek.
 
 **Known limitations**
 
-- The relay runs as a single instance by default (in-memory stores). Set `STORE_BACKEND=redis` with a `REDIS_URL` for persistence and horizontal scaling.
+- The relay persists sessions in Durable Objects (SQLite) with a 60-minute TTL.
 - A TURN server is not deployed by default, so some symmetric-NAT pairs fall back to the relay.
 - Edge and Safari have not been validated in this environment (the code uses only baseline Web Crypto, WebRTC, and WebSocket APIs).
 - Transfers of very large files (e.g. 15 GB) have not been manually validated; the chunked transfer path is size-agnostic.
 
 **Next**
 
-- Redis-backed relay (persistence + scale-out) — already supported via `STORE_BACKEND=redis`
 - TURN server for restrictive networks
 - Resume interrupted transfers
 - Better observability
