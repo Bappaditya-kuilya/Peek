@@ -13,12 +13,12 @@ function isLocalHost(hostname = window.location.hostname) {
 
 function getLocalRelayOrigin(protocol) {
   const relayProtocol = protocol === 'https:' ? 'https:' : 'http:';
-  return `${relayProtocol}//${window.location.hostname}:3000`;
+  return `${relayProtocol}//${window.location.hostname}:8787`;
 }
 
 function getLocalRelayWsOrigin(protocol) {
   const relayProtocol = protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${relayProtocol}//${window.location.hostname}:3000`;
+  return `${relayProtocol}//${window.location.hostname}:8787`;
 }
 
 export function getRelayHttpUrl() {

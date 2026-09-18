@@ -38,11 +38,9 @@ export function ReceiverScreen() {
   const [outgoingFiles, setOutgoingFiles] = useState([]);
   const [confirmKill, setConfirmKill] = useState(false);
   const { incomingPeekUrl, setIncomingPeekUrl } = useIncomingPeekLink();
-  const receiverUrl = new URL(window.location.href);
   // Secrets arrive in the URL fragment (#token.key) — never sent to the server.
   // Both halves are percent-encoded when the link is built (the base64 key can
   // contain +, /, =), so decode each part before use.
-  // Legacy ?t=&k= query links are still accepted for backward compatibility.
   const fragment = window.location.hash.replace(/^#/, '');
   const [fragmentTokenRaw, fragmentKeyRaw] = fragment.split('.');
   const decodeFragmentPart = (value) => {
@@ -57,10 +55,8 @@ export function ReceiverScreen() {
   };
   const fragmentToken = decodeFragmentPart(fragmentTokenRaw);
   const fragmentKeyBase64 = decodeFragmentPart(fragmentKeyRaw);
-  const queryToken = receiverUrl.searchParams.get('t') || receiverUrl.searchParams.get('token') || '';
-  const queryKeyBase64 = receiverUrl.searchParams.get('k') || '';
-  const token = fragmentToken || queryToken || '';
-  const keyBase64 = fragmentKeyBase64 || queryKeyBase64 || '';
+  const token = fragmentToken || '';
+  const keyBase64 = fragmentKeyBase64 || '';
   const fullLinkMode = Boolean(token && keyBase64);
   const [key, setKey] = useState(null);
   const transportRef = useRef(null);
