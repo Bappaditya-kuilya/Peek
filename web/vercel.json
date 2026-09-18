@@ -16,6 +16,6 @@
   "rewrites": [
     { "source": "/view", "destination": "/view.html" },
     { "source": "/view/(.*)", "destination": "/view.html" },
-    { "source": "/((?!receiver|assets|favicon).*)", "destination": "/index.html" }
+    { "source": "/((?!receiver|assets|favicon|robots\\.txt|sitemap\\.xml|site\\.webmanifest|apple-touch-icon\\.png|og\\.png).*)", "destination": "/index.html" }
   ]
 }
