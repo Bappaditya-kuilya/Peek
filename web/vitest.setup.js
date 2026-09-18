@@ -7,7 +7,6 @@ if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
   const originalGenerateKey = window.crypto.subtle.generateKey;
   const originalImportKey = window.crypto.subtle.importKey;
   const originalExportKey = window.crypto.subtle.exportKey;
-  const originalGetRandomValues = window.crypto.getRandomValues;
 
   // Mock getRandomValues to return deterministic values for tests
   window.crypto.getRandomValues = function(array) {
@@ -18,7 +17,11 @@ if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
   };
 
   // Mock encrypt to return a simple deterministic "encrypted" buffer
-  window.crypto.subtle.encrypt = async (algorithm, key, data) => {
+  // RSA-OAEP passes through to real WebCrypto for viewer key grants.
+  window.crypto.subtle.encrypt = async function (algorithm, key, data) {
+    if (algorithm?.name === 'RSA-OAEP') {
+      return originalEncrypt.call(window.crypto.subtle, algorithm, key, data);
+    }
     const dataBytes = data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
     const dataLength = dataBytes.length;
     const result = new Uint8Array(12 + dataBytes.length + 16); // IV + data + auth tag
@@ -31,22 +34,42 @@ if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
     return result.buffer;
   };
 
-  window.crypto.subtle.decrypt = async (algorithm, key, data) => {
+  window.crypto.subtle.decrypt = async function (algorithm, key, data) {
+    if (algorithm?.name === 'RSA-OAEP') {
+      return originalDecrypt.call(window.crypto.subtle, algorithm, key, data);
+    }
     const dataView = new Uint8Array(data);
     // Skip IV (12 bytes) and auth tag (16 bytes), return the middle
     const dataLength = data.byteLength - 12 - 16;
     return dataView.slice(12, 12 + dataLength).buffer;
   };
 
-  window.crypto.subtle.generateKey = async () => {
+  window.crypto.subtle.generateKey = async function (algorithm, ...rest) {
+    if (algorithm?.name && algorithm.name !== 'AES-GCM') {
+      return originalGenerateKey.call(window.crypto.subtle, algorithm, ...rest);
+    }
     return { type: 'secret', algorithm: { name: 'AES-GCM', length: 256 } };
   };
 
-  window.crypto.subtle.importKey = async () => {
-    return { type: 'secret', algorithm: { name: 'AES-GCM', length: 256 } };
+  window.crypto.subtle.importKey = async function (format, ...rest) {
+    if (format === 'jwk') {
+      return originalImportKey.call(window.crypto.subtle, format, ...rest);
+    }
+    try {
+      return await originalImportKey.call(window.crypto.subtle, format, ...rest);
+    } catch {
+      return { type: 'secret', algorithm: { name: 'AES-GCM', length: 256 } };
+    }
   };
 
-  window.crypto.subtle.exportKey = async () => {
-    return new ArrayBuffer(32);
+  window.crypto.subtle.exportKey = async function (format, ...rest) {
+    if (format === 'jwk') {
+      return originalExportKey.call(window.crypto.subtle, format, ...rest);
+    }
+    try {
+      return await originalExportKey.call(window.crypto.subtle, format, ...rest);
+    } catch {
+      return new ArrayBuffer(32);
+    }
   };
 }
