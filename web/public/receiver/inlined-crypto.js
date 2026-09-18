@@ -75,3 +75,49 @@ async function decryptChunk(key, encryptedBuffer) {
     ciphertext
   );
 }
+
+async function generateViewerKeypair() {
+  const keypair = await window.crypto.subtle.generateKey(
+    {
+      name: 'RSA-OAEP',
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: 'SHA-256',
+    },
+    true,
+    ['encrypt', 'decrypt']
+  );
+  const pubKeyJwk = await window.crypto.subtle.exportKey('jwk', keypair.publicKey);
+  return { privateKey: keypair.privateKey, publicKey: keypair.publicKey, pubKeyJwk };
+}
+
+async function wrapSessionKeyForViewer(viewerPubJwk, sessionAesKey) {
+  const viewerPub = await window.crypto.subtle.importKey(
+    'jwk',
+    viewerPubJwk,
+    { name: 'RSA-OAEP', hash: 'SHA-256' },
+    false,
+    ['encrypt']
+  );
+  const raw = await window.crypto.subtle.exportKey('raw', sessionAesKey);
+  const rawBytes = raw instanceof ArrayBuffer ? new Uint8Array(raw) : raw;
+  const wrapped = await window.crypto.subtle.encrypt({ name: 'RSA-OAEP' }, viewerPub, rawBytes);
+  return base64FromBytes(new Uint8Array(wrapped));
+}
+
+async function unwrapSessionKey(viewerPrivateKey, wrappedKeyB64) {
+  const wrappedBytes = bytesFromBase64(wrappedKeyB64);
+  const raw = await window.crypto.subtle.decrypt(
+    { name: 'RSA-OAEP' },
+    viewerPrivateKey,
+    wrappedBytes
+  );
+  const rawBytes = raw instanceof ArrayBuffer ? new Uint8Array(raw) : raw;
+  return window.crypto.subtle.importKey(
+    'raw',
+    rawBytes,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['decrypt', 'encrypt']
+  );
+}

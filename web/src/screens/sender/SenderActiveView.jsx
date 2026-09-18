@@ -4,6 +4,8 @@ import { ErrorBanner } from '../../components/ErrorBanner.jsx';
 import { FileRow } from '../../components/FileRow.jsx';
 import { IncomingPeekPanel } from '../../components/IncomingPeekPanel.jsx';
 import { KillSwitch } from '../../components/KillSwitch.jsx';
+import { PendingViewers } from '../../components/PendingViewers.jsx';
+import { ProgressBar } from '../../components/ProgressBar.jsx';
 import { QRDisplay } from '../../components/QRDisplay.jsx';
 import { ReceivePanel } from '../../components/ReceivePanel.jsx';
 import { ViewShare } from '../../components/ViewShare.jsx';
@@ -15,12 +17,14 @@ export function SenderActiveView({
   activity,
   clipboard,
   connectionTrouble,
+  onApproveViewer,
   onDownload,
   onKill,
   onRetry,
   onSendBack,
   peerConnected,
   peekLink,
+  pendingViewers = [],
   receivedFiles,
   selectedFiles,
   sendBackInputRef,
@@ -28,7 +32,12 @@ export function SenderActiveView({
   sharedFiles,
   statusMessage,
   transportMode,
+  viewerCount = 0,
 }) {
+  const sharedProgress =
+    sharedFiles.length === 0
+      ? 0
+      : Math.round(sharedFiles.reduce((sum, file) => sum + (file.progress || 0), 0) / sharedFiles.length);
   return (
     <div className="workspace">
       <div className="workspace-main">
@@ -50,10 +59,16 @@ export function SenderActiveView({
               <span className="metric-label">Files received</span>
             </div>
             <div className="metric-cell">
+              <span className="metric-value">{viewerCount}</span>
+              <span className="metric-label">Viewers</span>
+            </div>
+            <div className="metric-cell">
               <span className="metric-value">{formatTimer(session.expiresAt)}</span>
               <span className="metric-label">Time left</span>
             </div>
           </div>
+
+          <PendingViewers viewers={pendingViewers} onApprove={onApproveViewer} />
 
           <ErrorBanner>{statusMessage}</ErrorBanner>
           {!peerConnected ? <ErrorBanner tone="warning">Waiting for the other device to join and keep the session alive.</ErrorBanner> : null}
@@ -72,7 +87,9 @@ export function SenderActiveView({
                 <div className="panel-label">Your transfer set</div>
                 <h2 className="section-title">Files staged for this session</h2>
               </div>
+              <div className="panel-label">Shared progress {sharedProgress}%</div>
             </div>
+            <ProgressBar value={sharedProgress} />
             <div className="file-list">
               {sharedFiles.map((file) => {
                 const selectedEntry = selectedFiles.find((entry) => entry.id === file.id);
