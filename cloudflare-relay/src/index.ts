@@ -85,6 +85,7 @@ export class PeekSession {
 	async webSocketClose(ws: WebSocket): Promise<void> {
 		const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
 		if (!attachment || !attachment.sessionId) return;
+		this.pruneWsRateLimits(attachment.sessionId);
 
 		const session = await this.getSession(attachment.sessionId);
 		if (!session) return;
@@ -311,7 +312,13 @@ export class PeekSession {
 	}
 
 	private async killSessionInternal(sessionId: string): Promise<void> {
+		this.pruneWsRateLimits(sessionId);
 		await this.state.storage.delete(`session:${sessionId}`);
+	}
+
+	private pruneWsRateLimits(sessionId: string): void {
+		this.wsRateLimits.delete(`${sessionId}:initiator`);
+		this.wsRateLimits.delete(`${sessionId}:receiver`);
 	}
 
 	private getRoleWebSocket(sessionId: string, role: "initiator" | "receiver", receiverId?: string): WebSocket | null {
