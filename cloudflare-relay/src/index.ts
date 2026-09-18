@@ -33,7 +33,8 @@ interface WebSocketAttachment {
 
 // ponytail: DO-instance in-memory WS counter keyed by session+role;
 // survives reconnects (unlike a per-socket WeakMap). Storage write per
-// message is the wrong cost profile for this ceiling.
+// message is the wrong cost profile for this ceiling. Accepted: counters
+// reset on DO eviction (new instance starts empty).
 const WINDOW_MS = 3600000;
 const WS_WINDOW_MS = 60000;
 const WS_LIMIT = 100;
