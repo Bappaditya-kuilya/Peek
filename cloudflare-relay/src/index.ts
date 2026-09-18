@@ -456,16 +456,6 @@ export class PeekSession {
 		}
 	}
 
-	async relayToInitiator(ws: WebSocket, message: any): Promise<void> {
-		const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
-		if (!attachment || !attachment.sessionId || !attachment.receiverId) return;
-
-		const initiatorWs = this.getInitiatorWebSocket(attachment.sessionId);
-		if (initiatorWs && initiatorWs.readyState === WebSocket.OPEN) {
-			initiatorWs.send(JSON.stringify({ ...message, receiverId: attachment.receiverId }));
-		}
-	}
-
 	async handleBinaryMessage(ws: WebSocket, data: ArrayBuffer): Promise<void> {
 		const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
 		if (!attachment || !attachment.sessionId) return;
