@@ -194,7 +194,7 @@ describe('PeekSession Durable Object', () => {
 			expect(closeInfo.reason).toBe('Replaced by reconnect');
 		});
 
-		it('replaces joiner socket on reconnect', async () => {
+		it('rejects second receiver with busy when one already connected', async () => {
 			const id = newId();
 			const stub = peekSessionNamespace.get(id);
 
@@ -205,19 +205,31 @@ describe('PeekSession Durable Object', () => {
 			});
 			const { sessionId, token } = await createResponse.json();
 
-			const { ws: ws1 } = await connect(stub, { type: 'joiner-join', sessionId, token });
+			const { ws: initiatorWs } = await connect(stub, { type: 'initiator-join', sessionId, token });
+			const { ws: ws1, nextMessage } = await connect(stub, { type: 'joiner-join', sessionId, token });
 
-			const { ws: ws2 } = await connect(stub, { type: 'joiner-join', sessionId, token });
-
-			const closePromise = new Promise<{ code: number; reason: string }>((resolve) => {
-				ws1.addEventListener('close', (event) => {
+			const wsResponse2 = await stub.fetch('https://example.com/', { headers: { Upgrade: 'websocket' } });
+			const ws2 = wsResponse2.webSocket;
+			if (!ws2) throw new Error('Expected WebSocket response');
+			ws2.accept();
+			const closePromise2 = new Promise<{ code: number; reason: string }>((resolve) => {
+				ws2.addEventListener('close', (event) => {
 					resolve({ code: event.code, reason: event.reason });
 				}, { once: true });
 			});
+			ws2.send(JSON.stringify({ type: 'joiner-join', sessionId, token }));
 
-			const closeInfo = await closePromise;
-			expect(closeInfo.code).toBe(4005);
-			expect(closeInfo.reason).toBe('Replaced by reconnect');
+			const closeInfo = await Promise.race([
+				closePromise2,
+				new Promise<never>((_, reject) => setTimeout(() => reject(new Error('busy-close timeout: second receiver was not rejected')), 5000)),
+			]);
+			expect(closeInfo.code).toBe(4003);
+			expect(closeInfo.reason).toMatch(/busy/i);
+			expect(ws1.readyState).toBe(WebSocket.OPEN);
+
+			initiatorWs.send(new Uint8Array([7, 7, 7]).buffer);
+			const received = await nextMessage((d) => d instanceof ArrayBuffer) as ArrayBuffer;
+			expect(new Uint8Array(received)).toEqual(new Uint8Array([7, 7, 7]));
 		});
 	});
 
@@ -354,6 +366,71 @@ describe('PeekSession Durable Object', () => {
 			const closeInfo = await closePromise;
 			expect(closeInfo.code).toBe(4008);
 			expect(closeInfo.reason).toContain('rate limit');
+		});
+
+		it('caps messages across reconnects', async () => {
+			const id = newId();
+			const stub = peekSessionNamespace.get(id);
+
+			const createResponse = await stub.fetch('https://example.com/session', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ fileCount: 1 }),
+			});
+			const { sessionId, token } = await createResponse.json();
+
+			const { ws: ws1 } = await connect(stub, { type: 'initiator-join', sessionId, token });
+			for (let i = 0; i < 60; i++) {
+				ws1.send(JSON.stringify({ type: 'clipboard-push', data: `pre-${i}` }));
+			}
+
+			const { ws: ws2 } = await connect(stub, { type: 'initiator-join', sessionId, token });
+			const closePromise = new Promise<{ code: number; reason: string }>((resolve) => {
+				ws2.addEventListener('close', (event) => {
+					resolve({ code: event.code, reason: event.reason });
+				}, { once: true });
+			});
+			for (let i = 0; i < 50; i++) {
+				ws2.send(JSON.stringify({ type: 'clipboard-push', data: `post-${i}` }));
+			}
+
+			const closeInfo = await Promise.race([
+				closePromise,
+				new Promise<never>((_, reject) => setTimeout(() => reject(new Error('reconnect-cap timeout: ws2 was not rate-limited')), 5000)),
+			]);
+			expect(closeInfo.code).toBe(4008);
+		});
+
+		it('counts binary frames toward rate cap', async () => {
+			const id = newId();
+			const stub = peekSessionNamespace.get(id);
+
+			const createResponse = await stub.fetch('https://example.com/session', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ fileCount: 1 }),
+			});
+			const { sessionId, token } = await createResponse.json();
+
+			const { ws } = await connect(stub, { type: 'initiator-join', sessionId, token });
+			await connect(stub, { type: 'joiner-join', sessionId, token });
+			const closePromise = new Promise<{ code: number; reason: string }>((resolve) => {
+				ws.addEventListener('close', (event) => {
+					resolve({ code: event.code, reason: event.reason });
+				}, { once: true });
+			});
+			for (let i = 0; i < 60; i++) {
+				ws.send(JSON.stringify({ type: 'clipboard-push', data: `msg-${i}` }));
+			}
+			for (let i = 0; i < 50; i++) {
+				ws.send(new Uint8Array([1, 2, 3]).buffer);
+			}
+
+			const closeInfo = await Promise.race([
+				closePromise,
+				new Promise<never>((_, reject) => setTimeout(() => reject(new Error('binary-cap timeout: binary frames were not counted')), 5000)),
+			]);
+			expect(closeInfo.code).toBe(4008);
 		});
 	});
 

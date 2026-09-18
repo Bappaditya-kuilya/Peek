@@ -31,13 +31,15 @@ interface WebSocketAttachment {
 	receiverId?: string;
 }
 
-// ponytail: per-connection in-memory message counter for rate limiting;
-// resets with the connection, no storage needed for this ceiling.
-const wsMessageCounts = new WeakMap<WebSocket, number>();
-
+// ponytail: DO-instance in-memory WS counter keyed by session+role;
+// survives reconnects (unlike a per-socket WeakMap). Storage write per
+// message is the wrong cost profile for this ceiling.
 const WINDOW_MS = 3600000;
+const WS_WINDOW_MS = 60000;
+const WS_LIMIT = 100;
 
 export class PeekSession {
+	private wsRateLimits = new Map<string, { count: number; windowStart: number }>();
 	constructor(
 		private state: DurableObjectState,
 		private env: Env
@@ -369,15 +371,9 @@ export class PeekSession {
 			case "webrtc-candidate":
 			case "clipboard-push":
 			case "view-share-push":
-				const count = (wsMessageCounts.get(ws) || 0) + 1;
-				wsMessageCounts.set(ws, count);
-				if (count >= 100) {
-					// ponytail: defer close so it runs after the current message
-					// dispatch completes (workerd doesn't propagate a close fired
-					// synchronously inside the message handler to the client).
-					queueMicrotask(() => ws.close(4008, "rate limit exceeded"));
-					return;
-				}
+				const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+				if (!attachment || !attachment.sessionId) return;
+				if (this.checkWsRateLimit(ws, attachment.sessionId, attachment.role)) return;
 				await this.relaySignaling(ws, message);
 				break;
 			default:
@@ -421,23 +417,12 @@ export class PeekSession {
 				}
 			}
 		} else {
-			const receiverId = crypto.randomUUID();
-			const existingWs = this.getReceiverWebSocket(message.sessionId, receiverId);
-			if (existingWs && existingWs !== ws) {
-				queueMicrotask(() => existingWs.close(4005, "Replaced by reconnect"));
-			} else {
-				for (const other of this.state.getWebSockets()) {
-					const att = other.deserializeAttachment();
-					if (
-						other !== ws &&
-						att?.sessionId === message.sessionId &&
-						att?.role === "receiver"
-					) {
-						queueMicrotask(() => other.close(4005, "Replaced by reconnect"));
-					}
-				}
+			if (this.getAllReceiverWebSockets(message.sessionId).length > 0) {
+				queueMicrotask(() => ws.close(4003, "Session busy"));
+				return;
 			}
-			ws.serializeAttachment({ sessionId: message.sessionId, role: "receiver", receiverId });
+		const receiverId = crypto.randomUUID();
+		ws.serializeAttachment({ sessionId: message.sessionId, role: "receiver", receiverId });
 
 			const updatedReceivers = new Map(session.receivers);
 			updatedReceivers.set(receiverId, { joinedAt: Date.now() });
@@ -484,6 +469,7 @@ export class PeekSession {
 	async handleBinaryMessage(ws: WebSocket, data: ArrayBuffer): Promise<void> {
 		const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
 		if (!attachment || !attachment.sessionId) return;
+		if (this.checkWsRateLimit(ws, attachment.sessionId, attachment.role)) return;
 
 		if (attachment.role === "initiator") {
 			// Broadcast to all connected receivers
@@ -508,6 +494,25 @@ export class PeekSession {
 		if (ws.readyState === WebSocket.OPEN) {
 			ws.send(JSON.stringify(payload));
 		}
+	}
+
+	private checkWsRateLimit(ws: WebSocket, sessionId: string, role: string): boolean {
+		const now = Date.now();
+		const key = `${sessionId}:${role}`;
+		let entry = this.wsRateLimits.get(key);
+		if (!entry || now - entry.windowStart > WS_WINDOW_MS) {
+			entry = { count: 0, windowStart: now };
+		}
+		entry.count += 1;
+		this.wsRateLimits.set(key, entry);
+		if (entry.count >= WS_LIMIT) {
+			// ponytail: defer close so it runs after the current message
+			// dispatch completes (workerd doesn't propagate a close fired
+			// synchronously inside the message handler to the client).
+			queueMicrotask(() => ws.close(4008, "rate limit exceeded"));
+			return true;
+		}
+		return false;
 	}
 }
 
