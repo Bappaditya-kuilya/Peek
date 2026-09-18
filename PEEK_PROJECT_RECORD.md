@@ -18,8 +18,8 @@ server-side.
 
 ## Verification commands (run before claiming done)
 ```bash
-cd cloudflare-relay && npm test            # 20/20 (needs --no-isolate --max-workers=1)
-cd web && npm test && npm run lint && npm run typecheck && npm run build
+cd cloudflare-relay && npm test && npx tsc --noEmit && npm audit --omit=dev --audit-level=high
+cd web && npm test && npm run build && npm audit --omit=dev --audit-level=high
 ```
 
 ## The full arc
