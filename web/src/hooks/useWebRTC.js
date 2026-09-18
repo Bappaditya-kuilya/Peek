@@ -2,69 +2,47 @@ import { useEffect, useRef } from 'react';
 import { recordIceEvent, shouldWarnTurn } from '../shared/iceMonitor.js';
 import * as Sentry from '@sentry/react';
 
-const DEV_ICE_SERVERS = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  {
-    urls: 'turn:openrelay.metered.ca:80',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
+const DEFAULT_STUN_URLS = [
+  'stun:stun.l.google.com:19302',
+  'stun:stun.cloudflare.com:3478',
 ];
 
-function getIceServers() {
-  const stunServers = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-  ];
+// Free defaults, no signup: public OpenRelay static-auth hosts already used here.
+const DEFAULT_TURN_URLS = [
+  'turn:openrelay.metered.ca:80',
+  'turn:openrelay.metered.ca:443',
+  'turn:openrelay.metered.ca:443?transport=tcp',
+];
 
-  const turnUrl = import.meta.env.VITE_TURN_URL;
+function parseTurnUrls() {
+  const plural = import.meta.env.VITE_TURN_URLS;
+  if (plural) {
+    const list = plural.split(',').map((s) => s.trim()).filter(Boolean);
+    if (list.length) return list;
+  }
+  // Legacy single-URL override.
+  const single = import.meta.env.VITE_TURN_URL;
+  if (single?.trim()) return [single.trim()];
+  return DEFAULT_TURN_URLS;
+}
+
+function getIceServers() {
+  const stunServers = DEFAULT_STUN_URLS.map((urls) => ({ urls }));
+
   const turnUsername = import.meta.env.VITE_TURN_USERNAME;
   const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL;
 
-  if (turnUrl && turnUsername && turnCredential) {
-    return [
-      ...stunServers,
-      {
-        urls: turnUrl,
-        username: turnUsername,
-        credential: turnCredential,
-      },
-    ];
+  if (!turnUsername || !turnCredential) {
+    return stunServers;
   }
 
-  if (import.meta.env.DEV) {
-    return DEV_ICE_SERVERS;
-  }
-
-  // Production fallback: openrelay.metered.ca as last resort when no Cloudflare TURN configured
   return [
     ...stunServers,
-    {
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
+    ...parseTurnUrls().map((urls) => ({
+      urls,
+      username: turnUsername,
+      credential: turnCredential,
+    })),
   ];
 }
 

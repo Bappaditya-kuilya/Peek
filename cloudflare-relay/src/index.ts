@@ -4,6 +4,25 @@ export interface Env {
 
 interface ReceiverInfo {
 	joinedAt: number;
+	status?: "pending" | "approved";
+	pubKeyJwk?: unknown;
+	viewerName?: string;
+}
+
+const MAX_APPROVED_VIEWERS = 5;
+
+function approvedCount(receivers: Map<string, ReceiverInfo>): number {
+	let n = 0;
+	for (const r of receivers.values()) if (r.status !== "pending") n++;
+	return n;
+}
+
+function pendingCount(receivers: Map<string, ReceiverInfo>): number {
+	return receivers.size - approvedCount(receivers);
+}
+
+function isBase64String(s: unknown): s is string {
+	return typeof s === "string" && s.length > 0 && s.length <= 8192 && /^[A-Za-z0-9+/=_-]+$/.test(s);
 }
 
 interface Session {
@@ -92,6 +111,7 @@ export class PeekSession {
 		if (!session) return;
 
 		if (attachment.role === "receiver" && attachment.receiverId) {
+			const leaving = session.receivers.get(attachment.receiverId);
 			const updatedReceivers = new Map(session.receivers);
 			updatedReceivers.delete(attachment.receiverId);
 			await this.state.storage.put(`session:${attachment.sessionId}`, {
@@ -99,9 +119,12 @@ export class PeekSession {
 				receivers: updatedReceivers,
 			});
 
+			// pending never sent peer-connected, so stay silent; approved notifies with counts
+			if (leaving && leaving.status === "pending") return;
 			const initiatorWs = this.getInitiatorWebSocket(attachment.sessionId);
 			if (initiatorWs && initiatorWs.readyState === WebSocket.OPEN) {
-				initiatorWs.send(JSON.stringify({ type: "peer-disconnected", receiverId: attachment.receiverId }));
+				const approved = approvedCount(updatedReceivers);
+				initiatorWs.send(JSON.stringify({ type: "peer-disconnected", receiverId: attachment.receiverId, receiverCount: approved, approvedCount: approved, pendingCount: pendingCount(updatedReceivers) }));
 			}
 		} else if (attachment.role === "initiator") {
 			const receiverWsList = this.getAllReceiverWebSockets(attachment.sessionId);
@@ -374,6 +397,16 @@ export class PeekSession {
 			case "joiner-join":
 				await this.handleJoin(ws, message, type === "initiator-join" ? "initiator" : "receiver");
 				break;
+			case "receiver-join-request":
+				await this.handleReceiverJoinRequest(ws, message);
+				break;
+			case "sender-key-grant":
+				await this.handleSenderKeyGrant(ws, message);
+				break;
+			case "receiver-leave":
+			case "leave":
+				await this.handleReceiverLeave(ws, message);
+				break;
 			case "webrtc-offer":
 			case "webrtc-answer":
 			case "webrtc-candidate":
@@ -418,14 +451,15 @@ export class PeekSession {
 				initiatorJoinedAt: Date.now(),
 			});
 
-			this.sendJson(ws, { type: "initiator-ready", expiresAt: session.expiresAt, receiverCount: session.receivers.size });
+			const approved = approvedCount(session.receivers);
+			this.sendJson(ws, { type: "initiator-ready", expiresAt: session.expiresAt, receiverCount: approved, approvedCount: approved, pendingCount: pendingCount(session.receivers) });
 			for (const [receiverId, receiver] of session.receivers) {
-				if (receiver.joinedAt) {
-					this.sendJson(ws, { type: "peer-connected", receiverId });
+				if (receiver.status !== "pending") {
+					this.sendJson(ws, { type: "peer-connected", receiverId, receiverCount: approved, approvedCount: approved, pendingCount: pendingCount(session.receivers) });
 				}
 			}
 		} else {
-			if (this.getAllReceiverWebSockets(message.sessionId).length > 0) {
+			if (approvedCount(session.receivers) >= MAX_APPROVED_VIEWERS) {
 				queueMicrotask(() => ws.close(4003, "Session busy"));
 				return;
 			}
@@ -433,18 +467,110 @@ export class PeekSession {
 		ws.serializeAttachment({ sessionId: message.sessionId, role: "receiver", receiverId });
 
 			const updatedReceivers = new Map(session.receivers);
-			updatedReceivers.set(receiverId, { joinedAt: Date.now() });
+			updatedReceivers.set(receiverId, { joinedAt: Date.now(), status: "approved" });
 
 			await this.state.storage.put(`session:${message.sessionId}`, {
 				...session,
 				receivers: updatedReceivers,
 			});
 
-			this.sendJson(ws, { type: "receiver-ready", receiverId, expiresAt: session.expiresAt, peerCount: updatedReceivers.size });
+			const approvedAfter = approvedCount(updatedReceivers);
+			this.sendJson(ws, { type: "receiver-ready", receiverId, expiresAt: session.expiresAt, peerCount: approvedAfter, approvedCount: approvedAfter, pendingCount: pendingCount(updatedReceivers) });
 
 			const initiatorWs = this.getInitiatorWebSocket(message.sessionId);
 			if (initiatorWs) {
-				initiatorWs.send(JSON.stringify({ type: "peer-connected", receiverId }));
+				initiatorWs.send(JSON.stringify({ type: "peer-connected", receiverId, receiverCount: approvedAfter, approvedCount: approvedAfter, pendingCount: pendingCount(updatedReceivers) }));
+			}
+		}
+	}
+
+	async handleReceiverJoinRequest(ws: WebSocket, message: any): Promise<void> {
+		if (!/^[a-f0-9]{16}$/i.test(String(message?.sessionId || "")) ||
+			typeof message?.token !== "string" ||
+			!/^[a-f0-9]{32,128}$/i.test(message.token)) {
+			ws.close(4002, "Bad join payload");
+			return;
+		}
+		// opaque blobs only: JWK object + optional name, no key validation
+		if (typeof message?.pubKeyJwk !== "object" || message.pubKeyJwk === null || Array.isArray(message.pubKeyJwk)) {
+			ws.close(4002, "Bad join payload");
+			return;
+		}
+		if (message.viewerName !== undefined && typeof message.viewerName !== "string") {
+			ws.close(4002, "Bad join payload");
+			return;
+		}
+
+		const session = await this.getSession(message.sessionId);
+		if (!session || !(await this.validateToken(message.sessionId, message.token))) {
+			ws.close(4001, "Invalid token");
+			return;
+		}
+
+		if (approvedCount(session.receivers) >= MAX_APPROVED_VIEWERS) {
+			queueMicrotask(() => ws.close(4003, "Session busy"));
+			return;
+		}
+
+		if (pendingCount(session.receivers) >= MAX_APPROVED_VIEWERS) {
+			queueMicrotask(() => ws.close(4003, "Session busy"));
+			return;
+		}
+
+		const receiverId = crypto.randomUUID();
+		ws.serializeAttachment({ sessionId: message.sessionId, role: "receiver", receiverId });
+
+		const updatedReceivers = new Map(session.receivers);
+		updatedReceivers.set(receiverId, { joinedAt: Date.now(), status: "pending", pubKeyJwk: message.pubKeyJwk, viewerName: message.viewerName });
+		await this.state.storage.put(`session:${message.sessionId}`, { ...session, receivers: updatedReceivers });
+
+		const initiatorWs = this.getInitiatorWebSocket(message.sessionId);
+		if (initiatorWs && initiatorWs.readyState === WebSocket.OPEN) {
+			initiatorWs.send(JSON.stringify({ type: "viewer-pending", receiverId, pubKeyJwk: message.pubKeyJwk, viewerName: message.viewerName }));
+		}
+	}
+
+	async handleSenderKeyGrant(ws: WebSocket, message: any): Promise<void> {
+		const { sessionId, token, targetReceiverId, wrappedKeyB64 } = message ?? {};
+		if (typeof sessionId !== "string" || typeof token !== "string" || typeof targetReceiverId !== "string" || !isBase64String(wrappedKeyB64)) return;
+
+		const grantor = ws.deserializeAttachment() as WebSocketAttachment | null;
+		if (!grantor || grantor.role !== "initiator" || grantor.sessionId !== sessionId) return;
+
+		const session = await this.getSession(sessionId);
+		if (!session || !(await this.validateToken(sessionId, token))) return;
+
+		const target = session.receivers.get(targetReceiverId);
+		if (!target || target.status !== "pending") return;
+
+		const updatedReceivers = new Map(session.receivers);
+		updatedReceivers.set(targetReceiverId, { ...target, status: "approved", joinedAt: Date.now() });
+		await this.state.storage.put(`session:${sessionId}`, { ...session, receivers: updatedReceivers });
+
+		const targetWs = this.getReceiverWebSocket(sessionId, targetReceiverId);
+		if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+			targetWs.send(JSON.stringify({ type: "key-grant", wrappedKeyB64 }));
+		}
+
+		const approved = approvedCount(updatedReceivers);
+		const pending = pendingCount(updatedReceivers);
+		this.sendJson(ws, { type: "peer-connected", receiverId: targetReceiverId, receiverCount: approved, approvedCount: approved, pendingCount: pending });
+	}
+
+	async handleReceiverLeave(ws: WebSocket, _message: any): Promise<void> {
+		const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+		if (!attachment || !attachment.sessionId || attachment.role !== "receiver" || !attachment.receiverId) return;
+		const session = await this.getSession(attachment.sessionId);
+		if (!session || !session.receivers.has(attachment.receiverId)) return;
+		const leaving = session.receivers.get(attachment.receiverId);
+		const updatedReceivers = new Map(session.receivers);
+		updatedReceivers.delete(attachment.receiverId);
+		await this.state.storage.put(`session:${attachment.sessionId}`, { ...session, receivers: updatedReceivers });
+		if (leaving && leaving.status !== "pending") {
+			const initiatorWs = this.getInitiatorWebSocket(attachment.sessionId);
+			if (initiatorWs && initiatorWs.readyState === WebSocket.OPEN) {
+				const approved = approvedCount(updatedReceivers);
+				initiatorWs.send(JSON.stringify({ type: "peer-disconnected", receiverId: attachment.receiverId, receiverCount: approved, approvedCount: approved, pendingCount: pendingCount(updatedReceivers) }));
 			}
 		}
 	}
@@ -458,6 +584,10 @@ export class PeekSession {
 			return;
 		}
 
+		const session = await this.getSession(attachment.sessionId);
+		const target = session?.receivers.get(targetReceiverId);
+		if (!target || target.status === "pending") return;
+
 		const targetWs = this.getReceiverWebSocket(attachment.sessionId, targetReceiverId);
 		if (targetWs && targetWs.readyState === WebSocket.OPEN) {
 			targetWs.send(JSON.stringify(message));
@@ -470,10 +600,11 @@ export class PeekSession {
 		if (this.checkWsRateLimit(ws, attachment.sessionId, attachment.role)) return;
 
 		if (attachment.role === "initiator") {
-			// Broadcast to all connected receivers
+			// Fan-out to ALL approved receivers
 			const session = await this.getSession(attachment.sessionId);
 			if (session) {
 				for (const [receiverId, receiver] of session.receivers) {
+					if (receiver.status === "pending") continue;
 					const receiverWs = this.getReceiverWebSocket(attachment.sessionId, receiverId);
 					if (receiverWs && receiverWs.readyState === WebSocket.OPEN) {
 						receiverWs.send(data);
