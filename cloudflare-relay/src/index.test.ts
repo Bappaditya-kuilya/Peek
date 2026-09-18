@@ -194,7 +194,7 @@ describe('PeekSession Durable Object', () => {
 			expect(closeInfo.reason).toBe('Replaced by reconnect');
 		});
 
-		it('rejects second receiver with busy when one already connected', async () => {
+		it('rejects sixth receiver with busy when five already connected (5 max)', async () => {
 			const id = newId();
 			const stub = peekSessionNamespace.get(id);
 
@@ -207,6 +207,10 @@ describe('PeekSession Durable Object', () => {
 
 			const { ws: initiatorWs } = await connect(stub, { type: 'initiator-join', sessionId, token });
 			const { ws: ws1, nextMessage } = await connect(stub, { type: 'joiner-join', sessionId, token });
+			// fill to 5 approved (legacy joins auto-approve)
+			for (let i = 0; i < 4; i++) {
+				await connect(stub, { type: 'joiner-join', sessionId, token });
+			}
 
 			const wsResponse2 = await stub.fetch('https://example.com/', { headers: { Upgrade: 'websocket' } });
 			const ws2 = wsResponse2.webSocket;
@@ -221,7 +225,7 @@ describe('PeekSession Durable Object', () => {
 
 			const closeInfo = await Promise.race([
 				closePromise2,
-				new Promise<never>((_, reject) => setTimeout(() => reject(new Error('busy-close timeout: second receiver was not rejected')), 5000)),
+				new Promise<never>((_, reject) => setTimeout(() => reject(new Error('busy-close timeout: sixth receiver was not rejected')), 5000)),
 			]);
 			expect(closeInfo.code).toBe(4003);
 			expect(closeInfo.reason).toMatch(/busy/i);
@@ -230,6 +234,220 @@ describe('PeekSession Durable Object', () => {
 			initiatorWs.send(new Uint8Array([7, 7, 7]).buffer);
 			const received = await nextMessage((d) => d instanceof ArrayBuffer) as ArrayBuffer;
 			expect(new Uint8Array(received)).toEqual(new Uint8Array([7, 7, 7]));
+		});
+	});
+
+	describe('Multi-viewer per-viewer keys (5 max, pending/approved)', () => {
+		const openRawWs = async (stub: any) => {
+			const wsResponse = await stub.fetch('https://example.com/', { headers: { Upgrade: 'websocket' } });
+			const ws = wsResponse.webSocket;
+			if (!ws) throw new Error('Expected WebSocket response');
+			ws.accept();
+			const inbox: any[] = [];
+			ws.addEventListener('message', (event: any) => { inbox.push(event.data); });
+			const nextMessage = (pred: (d: any) => boolean, timeoutMs = 5000) =>
+				new Promise<any>((resolve, reject) => {
+					const found = inbox.find(pred);
+					if (found !== undefined) return resolve(found);
+					const onMsg = (event: any) => {
+						if (pred(event.data)) {
+							ws.removeEventListener('message', onMsg);
+							resolve(event.data);
+						}
+					};
+					ws.addEventListener('message', onMsg);
+					setTimeout(() => { ws.removeEventListener('message', onMsg); reject(new Error('nextMessage timeout')); }, timeoutMs);
+				});
+			const waitClose = (timeoutMs = 5000) =>
+				new Promise<{ code: number; reason: string }>((resolve, reject) => {
+					ws.addEventListener('close', (event: any) => {
+						resolve({ code: event.code, reason: event.reason });
+					}, { once: true });
+					setTimeout(() => reject(new Error('waitClose timeout')), timeoutMs);
+				});
+			return { ws, inbox, nextMessage, waitClose };
+		};
+
+		const createSession = async (stub: any) => {
+			const createResponse = await stub.fetch('https://example.com/session', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ fileCount: 1 }),
+			});
+			return await createResponse.json() as { sessionId: string; token: string };
+		};
+
+		const fakeJwk = (n = 'fake-n') => ({ kty: 'RSA', n, e: 'AQAB', alg: 'RSA-OAEP-256', ext: true });
+		const fakeWrapped = (s = 'fake-wrapped-key') => btoa(s);
+
+		it('(a) forwards receiver-join-request as viewer-pending (pending does not count)', async () => {
+			const id = newId();
+			const stub = peekSessionNamespace.get(id);
+			const { sessionId, token } = await createSession(stub);
+			const { ws: initiatorWs, nextMessage: initiatorNext } = await connect(stub, { type: 'initiator-join', sessionId, token });
+
+			const { ws: joinerWs } = await openRawWs(stub);
+			const pubKeyJwk = fakeJwk();
+			joinerWs.send(JSON.stringify({ type: 'receiver-join-request', sessionId, token, pubKeyJwk, viewerName: 'Alice' }));
+
+			const raw = await initiatorNext((d: any) => typeof d === 'string' && JSON.parse(d).type === 'viewer-pending') as string;
+			const msg = JSON.parse(raw);
+			expect(msg.type).toBe('viewer-pending');
+			expect(typeof msg.receiverId).toBe('string');
+			expect(msg.pubKeyJwk).toEqual(pubKeyJwk);
+			expect(msg.viewerName).toBe('Alice');
+			// pending does NOT trigger peer-connected
+			expect(initiatorWs.readyState).toBe(WebSocket.OPEN);
+			expect(joinerWs.readyState).toBe(WebSocket.OPEN);
+		});
+
+		it('(b) rejects 6th join with busy when 5 approved', async () => {
+			const id = newId();
+			const stub = peekSessionNamespace.get(id);
+			const { sessionId, token } = await createSession(stub);
+			const { ws: initiatorWs, nextMessage: initiatorNext } = await connect(stub, { type: 'initiator-join', sessionId, token });
+
+			for (let i = 0; i < 5; i++) {
+				const { ws: rws, nextMessage: rNext } = await openRawWs(stub);
+				rws.send(JSON.stringify({ type: 'receiver-join-request', sessionId, token, pubKeyJwk: fakeJwk(`n${i}`), viewerName: `V${i}` }));
+				const pendingRaw = await initiatorNext((d: any) => typeof d === 'string' && JSON.parse(d).viewerName === `V${i}`) as string;
+				const pending = JSON.parse(pendingRaw);
+				expect(pending.type).toBe('viewer-pending');
+				initiatorWs.send(JSON.stringify({ type: 'sender-key-grant', sessionId, token, targetReceiverId: pending.receiverId, wrappedKeyB64: fakeWrapped(`k${i}`) }));
+				const grantRaw = await rNext((d: any) => typeof d === 'string' && JSON.parse(d).type === 'key-grant') as string;
+				expect(JSON.parse(grantRaw).wrappedKeyB64).toBe(fakeWrapped(`k${i}`));
+			}
+
+			const { ws: ws6, waitClose } = await openRawWs(stub);
+			ws6.send(JSON.stringify({ type: 'receiver-join-request', sessionId, token, pubKeyJwk: fakeJwk('n6'), viewerName: 'V6' }));
+			const closeInfo = await waitClose();
+			expect(closeInfo.code).toBe(4003);
+			expect(closeInfo.reason).toMatch(/busy/i);
+		});
+
+		it('(c) forwards sender-key-grant as key-grant and marks approved', async () => {
+			const id = newId();
+			const stub = peekSessionNamespace.get(id);
+			const { sessionId, token } = await createSession(stub);
+			const { ws: initiatorWs, nextMessage: initiatorNext } = await connect(stub, { type: 'initiator-join', sessionId, token });
+
+			const { ws: rws, nextMessage: rNext } = await openRawWs(stub);
+			const pubKeyJwk = fakeJwk();
+			rws.send(JSON.stringify({ type: 'receiver-join-request', sessionId, token, pubKeyJwk, viewerName: 'Bob' }));
+			const pendingRaw = await initiatorNext((d: any) => typeof d === 'string' && JSON.parse(d).type === 'viewer-pending') as string;
+			const pending = JSON.parse(pendingRaw);
+
+			const wrappedKeyB64 = fakeWrapped('secret-123');
+			initiatorWs.send(JSON.stringify({ type: 'sender-key-grant', sessionId, token, targetReceiverId: pending.receiverId, wrappedKeyB64 }));
+			const grantRaw = await rNext((d: any) => typeof d === 'string' && JSON.parse(d).type === 'key-grant') as string;
+			const grant = JSON.parse(grantRaw);
+			expect(grant.type).toBe('key-grant');
+			expect(grant.wrappedKeyB64).toBe(wrappedKeyB64);
+
+			// sender learns count via peer-connected (extended, not new channel)
+			const peerRaw = await initiatorNext((d: any) => typeof d === 'string' && JSON.parse(d).type === 'peer-connected' && JSON.parse(d).receiverId === pending.receiverId) as string;
+			const peer = JSON.parse(peerRaw);
+			expect(peer.receiverId).toBe(pending.receiverId);
+			expect(peer.receiverCount).toBe(1);
+		});
+
+		it('(d) fans out binary to 2 approved receivers', async () => {
+			const id = newId();
+			const stub = peekSessionNamespace.get(id);
+			const { sessionId, token } = await createSession(stub);
+			const { ws: initiatorWs, nextMessage: initiatorNext } = await connect(stub, { type: 'initiator-join', sessionId, token });
+
+			const approved: Array<{ ws: any; nextMessage: any }> = [];
+			for (let i = 0; i < 2; i++) {
+				const { ws: rws, nextMessage: rNext } = await openRawWs(stub);
+				rws.send(JSON.stringify({ type: 'receiver-join-request', sessionId, token, pubKeyJwk: fakeJwk(`fan${i}`), viewerName: `F${i}` }));
+				const pendingRaw = await initiatorNext((d: any) => typeof d === 'string' && JSON.parse(d).viewerName === `F${i}`) as string;
+				const pending = JSON.parse(pendingRaw);
+				initiatorWs.send(JSON.stringify({ type: 'sender-key-grant', sessionId, token, targetReceiverId: pending.receiverId, wrappedKeyB64: fakeWrapped(`fk${i}`) }));
+				await rNext((d: any) => typeof d === 'string' && JSON.parse(d).type === 'key-grant');
+				approved.push({ ws: rws, nextMessage: rNext });
+			}
+
+			initiatorWs.send(new Uint8Array([5, 6, 7]).buffer);
+			for (const { nextMessage } of approved) {
+				const received = await nextMessage((d: any) => d instanceof ArrayBuffer) as ArrayBuffer;
+				expect(new Uint8Array(received)).toEqual(new Uint8Array([5, 6, 7]));
+			}
+		});
+
+		it('(e) leave/disconnect decrements and notifies sender with counts', async () => {
+			const id = newId();
+			const stub = peekSessionNamespace.get(id);
+			const { sessionId, token } = await createSession(stub);
+			const { ws: initiatorWs, nextMessage: initiatorNext } = await connect(stub, { type: 'initiator-join', sessionId, token });
+
+			const receivers: Array<{ ws: any; nextMessage: any; receiverId: string }> = [];
+			for (let i = 0; i < 2; i++) {
+				const { ws: rws, nextMessage: rNext } = await openRawWs(stub);
+				rws.send(JSON.stringify({ type: 'receiver-join-request', sessionId, token, pubKeyJwk: fakeJwk(`lv${i}`), viewerName: `L${i}` }));
+				const pendingRaw = await initiatorNext((d: any) => typeof d === 'string' && JSON.parse(d).viewerName === `L${i}`) as string;
+				const pending = JSON.parse(pendingRaw);
+				initiatorWs.send(JSON.stringify({ type: 'sender-key-grant', sessionId, token, targetReceiverId: pending.receiverId, wrappedKeyB64: fakeWrapped(`lk${i}`) }));
+				await rNext((d: any) => typeof d === 'string' && JSON.parse(d).type === 'key-grant');
+				receivers.push({ ws: rws, nextMessage: rNext, receiverId: pending.receiverId });
+			}
+			// drain peer-connected for second receiver so next peer-disconnected is unambiguous
+			await initiatorNext((d: any) => typeof d === 'string' && JSON.parse(d).type === 'peer-connected' && JSON.parse(d).receiverId === receivers[1].receiverId);
+
+			receivers[0].ws.close();
+			const discRaw = await initiatorNext((d: any) => typeof d === 'string' && JSON.parse(d).type === 'peer-disconnected' && JSON.parse(d).receiverId === receivers[0].receiverId) as string;
+			const disc = JSON.parse(discRaw);
+			expect(disc.receiverId).toBe(receivers[0].receiverId);
+			expect(disc.receiverCount).toBe(1);
+
+			// fan-out now reaches only the remaining receiver
+			initiatorWs.send(new Uint8Array([9, 9, 9]).buffer);
+			const received = await receivers[1].nextMessage((d: any) => d instanceof ArrayBuffer) as ArrayBuffer;
+			expect(new Uint8Array(received)).toEqual(new Uint8Array([9, 9, 9]));
+		});
+
+		it('(f) rejects 6th pending join-request with busy when 5 already pending', async () => {
+			const id = newId();
+			const stub = peekSessionNamespace.get(id);
+			const { sessionId, token } = await createSession(stub);
+			const { nextMessage: initiatorNext } = await connect(stub, { type: 'initiator-join', sessionId, token });
+
+			for (let i = 0; i < 5; i++) {
+				const { ws } = await openRawWs(stub);
+				ws.send(JSON.stringify({ type: 'receiver-join-request', sessionId, token, pubKeyJwk: fakeJwk(`p${i}`), viewerName: `P${i}` }));
+				const raw = await initiatorNext((d: any) => typeof d === 'string' && JSON.parse(d).viewerName === `P${i}`) as string;
+				expect(JSON.parse(raw).type).toBe('viewer-pending');
+			}
+
+			const { ws: ws6, waitClose } = await openRawWs(stub);
+			ws6.send(JSON.stringify({ type: 'receiver-join-request', sessionId, token, pubKeyJwk: fakeJwk('p5'), viewerName: 'P5' }));
+			const closeInfo = await waitClose();
+			expect(closeInfo.code).toBe(4003);
+			expect(closeInfo.reason).toMatch(/busy/i);
+		});
+
+		it('(g) ignores sender-key-grant from viewer (victim stays pending)', async () => {
+			const id = newId();
+			const stub = peekSessionNamespace.get(id);
+			const { sessionId, token } = await createSession(stub);
+			const { ws: initiatorWs, nextMessage: initiatorNext } = await connect(stub, { type: 'initiator-join', sessionId, token });
+
+			const { ws: victimWs, nextMessage: victimNext } = await openRawWs(stub);
+			victimWs.send(JSON.stringify({ type: 'receiver-join-request', sessionId, token, pubKeyJwk: fakeJwk('victim'), viewerName: 'Victim' }));
+			const pendingRaw = await initiatorNext((d: any) => typeof d === 'string' && JSON.parse(d).viewerName === 'Victim') as string;
+			const pending = JSON.parse(pendingRaw);
+			expect(pending.type).toBe('viewer-pending');
+
+			const { ws: attackerWs } = await openRawWs(stub);
+			attackerWs.send(JSON.stringify({ type: 'receiver-join-request', sessionId, token, pubKeyJwk: fakeJwk('attacker'), viewerName: 'Attacker' }));
+			await initiatorNext((d: any) => typeof d === 'string' && JSON.parse(d).viewerName === 'Attacker');
+
+			attackerWs.send(JSON.stringify({ type: 'sender-key-grant', sessionId, token, targetReceiverId: pending.receiverId, wrappedKeyB64: fakeWrapped('evil') }));
+			await expect(victimNext((d: any) => typeof d === 'string' && JSON.parse(d).type === 'key-grant', 1000)).rejects.toThrow();
+
+			initiatorWs.send(JSON.stringify({ type: 'sender-key-grant', sessionId, token, targetReceiverId: pending.receiverId, wrappedKeyB64: fakeWrapped('legit') }));
+			const grantRaw = await victimNext((d: any) => typeof d === 'string' && JSON.parse(d).type === 'key-grant') as string;
+			expect(JSON.parse(grantRaw).wrappedKeyB64).toBe(fakeWrapped('legit'));
 		});
 	});
 

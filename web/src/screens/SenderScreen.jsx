@@ -183,7 +183,7 @@ export function SenderScreen() {
 
   transportRef.current = createTransport(webRtc.dataChannelRef, fallbackSocketRef);
 
-  useSenderSessionCoordinator({
+  const senderCoordination = useSenderSessionCoordinator({
     clipboard,
     fallbackSocketRef,
     fallbackTimeoutRef,
@@ -200,6 +200,8 @@ export function SenderScreen() {
     transportRef,
     webRtc,
   });
+  const pendingViewers = senderCoordination?.pendingViewers ?? [];
+  const viewerCount = senderCoordination?.viewerCount ?? 0;
 
   function handleFilesAdded(fileList) {
     const files = Array.from(fileList || []).map((file) => {
@@ -307,6 +309,7 @@ export function SenderScreen() {
             activity={activity}
             clipboard={clipboard}
             connectionTrouble={connectionTrouble}
+            onApproveViewer={(receiverId) => senderCoordination?.approveViewer(receiverId)}
             onDownload={downloadFile}
             onKill={handleKillSession}
             onRetry={() => {
@@ -317,6 +320,7 @@ export function SenderScreen() {
             onSendBack={handleSendBackFiles}
             peerConnected={peerConnected}
             peekLink={peekLink}
+            pendingViewers={pendingViewers}
             receivedFiles={receivedFiles}
             selectedFiles={selectedFiles}
             sendBackInputRef={sendBackInputRef}
@@ -324,6 +328,7 @@ export function SenderScreen() {
             sharedFiles={sharedFiles}
             statusMessage={statusMessage}
             transportMode={transportMode}
+            viewerCount={viewerCount}
           />
         ) : null}
 

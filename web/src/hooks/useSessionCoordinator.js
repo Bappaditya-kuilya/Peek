@@ -1,5 +1,10 @@
-import { useEffect, useRef } from 'react';
-import { importKeyFromBase64 } from '../shared/crypto.js';
+import { useEffect, useRef, useState } from 'react';
+import {
+  generateViewerKeypair,
+  importKeyFromBase64,
+  unwrapSessionKey,
+  wrapSessionKeyForViewer,
+} from '../shared/crypto.js';
 import { getDeviceId } from '../utils/deviceIdentity.js';
 import {
   SESSION_ENDED_CLOSE_CODES,
@@ -31,6 +36,32 @@ export function useSenderSessionCoordinator({
   const hasConnectedPeerRef = useRef(false);
   const selectedFilesRef = useRef(selectedFiles);
   selectedFilesRef.current = selectedFiles;
+  const [pendingViewers, setPendingViewers] = useState([]);
+  const [viewerCount, setViewerCount] = useState(0);
+  const pendingViewersRef = useRef([]);
+  pendingViewersRef.current = pendingViewers;
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const MAX_VIEWERS = 5;
+
+  async function approveViewer(receiverId) {
+    const currentSession = sessionRef.current;
+    const viewer = pendingViewersRef.current.find((v) => v.receiverId === receiverId);
+    if (!viewer || !currentSession?.key) {
+      return;
+    }
+    const wrappedKeyB64 = await wrapSessionKeyForViewer(viewer.pubKeyJwk, currentSession.key);
+    fallbackSocketRef.current?.send(
+      JSON.stringify({
+        type: 'sender-key-grant',
+        sessionId: currentSession.sessionId,
+        token: currentSession.token,
+        targetReceiverId: receiverId,
+        wrappedKeyB64,
+      })
+    );
+    setPendingViewers((current) => current.filter((v) => v.receiverId !== receiverId));
+  }
 
   useEffect(() => {
     if (!session) return undefined;
@@ -39,6 +70,8 @@ export function useSenderSessionCoordinator({
     socket.binaryType = 'arraybuffer';
     fallbackSocketRef.current = socket;
     hasSentOfferRef.current = false;
+    setPendingViewers([]);
+    setViewerCount(0);
 
     async function sendOffer() {
       if (hasSentOfferRef.current) {
@@ -69,12 +102,40 @@ export function useSenderSessionCoordinator({
       const message = JSON.parse(event.data);
       switch (message.type) {
         case 'initiator-ready':
+          if (typeof message.receiverCount === 'number') {
+            setViewerCount(message.receiverCount);
+          }
           setStatusMessage('Waiting for the other device to join…');
+          break;
+        case 'viewer-pending':
+          if (message.receiverId && message.pubKeyJwk) {
+            setPendingViewers((current) => {
+              if (current.some((v) => v.receiverId === message.receiverId)) {
+                return current;
+              }
+              if (current.length >= MAX_VIEWERS) {
+                return current;
+              }
+              return [
+                ...current,
+                {
+                  receiverId: message.receiverId,
+                  pubKeyJwk: message.pubKeyJwk,
+                  viewerName: message.viewerName || message.receiverId,
+                },
+              ];
+            });
+          }
           break;
         case 'joiner-ready':
         case 'peer-connected':
           hasConnectedPeerRef.current = true;
           setPeerConnected(true);
+          if (typeof message.receiverCount === 'number') {
+            setViewerCount(message.receiverCount);
+          } else if (message.receiverId) {
+            setViewerCount((c) => Math.min(MAX_VIEWERS, c + 1));
+          }
           setStatusMessage('');
           clipboard.flushDraft().catch(() => {});
           sendOffer().catch(() => {});
@@ -107,6 +168,11 @@ export function useSenderSessionCoordinator({
           setIncomingPeekUrl(message.url || '');
           break;
         case 'peer-disconnected':
+          if (typeof message.receiverCount === 'number') {
+            setViewerCount(message.receiverCount);
+          } else {
+            setViewerCount((c) => Math.max(0, c - 1));
+          }
           setStatusMessage('The other device disconnected.');
           break;
         default:
@@ -138,6 +204,8 @@ export function useSenderSessionCoordinator({
       webRtc.closePeerConnection();
     };
   }, [session]);
+
+  return { pendingViewers, viewerCount, approveViewer };
 }
 
 export function useReceiverSessionCoordinator({
@@ -161,9 +229,11 @@ export function useReceiverSessionCoordinator({
   const joinTimeoutRef = useRef(null);
   const hasJoinedRef = useRef(false);
   const handlersRef = useRef({});
+  const viewerPrivateKeyRef = useRef(null);
 
-  const wsEnabled = Boolean(fullLinkMode && key);
-  const wsUrl = fullLinkMode ? getRelayWsUrl(sessionId) : '';
+  const grantMode = Boolean(sessionId && token && !keyBase64);
+  const wsEnabled = Boolean((fullLinkMode && key) || grantMode);
+  const wsUrl = fullLinkMode || grantMode ? getRelayWsUrl(sessionId) : '';
 
   const onMessage = (event) => {
     handlersRef.current.onMessage?.(event);
@@ -211,9 +281,32 @@ export function useReceiverSessionCoordinator({
   useEffect(() => {
     handlersRef.current.onOpen = async () => {
       const s = fallbackSocketRef.current;
-      if (s) {
-        const deviceId = await getDeviceId();
-        s.send(JSON.stringify({ type: 'joiner-join', sessionId, token, deviceId }));
+      if (fullLinkMode) {
+        if (s) {
+          const deviceId = await getDeviceId();
+          s.send(JSON.stringify({ type: 'joiner-join', sessionId, token, deviceId }));
+        }
+      } else if (grantMode) {
+        try {
+          const { privateKey, pubKeyJwk } = await generateViewerKeypair();
+          viewerPrivateKeyRef.current = privateKey;
+          let viewerName = 'Viewer';
+          try {
+            const deviceId = await getDeviceId();
+            viewerName = `Viewer-${String(deviceId).slice(0, 4)}`;
+          } catch {
+            viewerName = 'Viewer';
+          }
+          if (s) {
+            s.send(
+              JSON.stringify({ type: 'receiver-join-request', sessionId, token, pubKeyJwk, viewerName })
+            );
+          }
+        } catch {
+          setStatusMessage('Unable to start secure join.');
+          setStatusDanger(true);
+          return;
+        }
       }
       clipboard.flushDraft().catch(() => {});
       if (joinTimeoutRef.current) window.clearTimeout(joinTimeoutRef.current);
@@ -235,6 +328,7 @@ export function useReceiverSessionCoordinator({
 
       switch (message.type) {
         case 'joiner-ready':
+        case 'receiver-ready':
           hasJoinedRef.current = true;
           if (joinTimeoutRef.current) window.clearTimeout(joinTimeoutRef.current);
           setJoined(true);
@@ -243,6 +337,26 @@ export function useReceiverSessionCoordinator({
           setStatusDanger(false);
           clipboard.flushDraft().catch(() => {});
           break;
+        case 'key-grant': {
+          if (!message.wrappedKeyB64 || !viewerPrivateKeyRef.current) {
+            break;
+          }
+          try {
+            const sessionKey = await unwrapSessionKey(viewerPrivateKeyRef.current, message.wrappedKeyB64);
+            hasJoinedRef.current = true;
+            if (joinTimeoutRef.current) window.clearTimeout(joinTimeoutRef.current);
+            setKey(sessionKey);
+            setJoined(true);
+            setTransportMode(TRANSPORT_RELAY);
+            setStatusMessage('');
+            setStatusDanger(false);
+            clipboard.flushDraft().catch(() => {});
+          } catch {
+            setStatusMessage('Unable to unlock this session. Ask the sender to approve again.');
+            setStatusDanger(true);
+          }
+          break;
+        }
         case 'webrtc-offer': {
           const answer = await webRtc.acceptOffer(message.offer);
           const s = fallbackSocketRef.current;
@@ -279,12 +393,13 @@ export function useReceiverSessionCoordinator({
       }
       setStatusDanger(false);
     };
-  }, [sessionId, token, clipboard, setIncomingPeekUrl, setJoined, setSessionExpiresAt, setStatusDanger, setStatusMessage, setTransportMode, transfer, webRtc, fallbackSocketRef]);
+  }, [sessionId, token, clipboard, setIncomingPeekUrl, setJoined, setKey, setSessionExpiresAt, setStatusDanger, setStatusMessage, setTransportMode, transfer, webRtc, fallbackSocketRef, fullLinkMode, keyBase64]);
 
   useEffect(() => {
     return () => {
       if (joinTimeoutRef.current) window.clearTimeout(joinTimeoutRef.current);
       hasJoinedRef.current = false;
+      viewerPrivateKeyRef.current = null;
     };
-  }, [fullLinkMode, key, sessionId, token]);
+  }, [fullLinkMode, keyBase64, sessionId, token]);
 }

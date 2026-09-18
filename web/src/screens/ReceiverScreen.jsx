@@ -58,6 +58,7 @@ export function ReceiverScreen() {
   const token = fragmentToken || '';
   const keyBase64 = fragmentKeyBase64 || '';
   const fullLinkMode = Boolean(token && keyBase64);
+  const grantMode = Boolean(token && !keyBase64);
   const [key, setKey] = useState(null);
   const transportRef = useRef(null);
   const clipboard = useClipboard({
@@ -188,12 +189,12 @@ export function ReceiverScreen() {
   const remaining = expiresAt - now;
   const timerClass = remaining <= 60 * 1000 ? 'critical' : remaining <= 5 * 60 * 1000 ? 'warning' : '';
 
-  if (!fullLinkMode) {
+  if (!token) {
     return <ReceiverPendingView mode="missing-key" statusMessage={statusMessage} statusDanger={statusDanger} connectionTrouble={connectionTrouble} onRetry={() => { setConnectionTrouble(false); setStatusMessage(''); webRtc.createPeerConnection(); }} />;
   }
 
   if (!joined) {
-    return <ReceiverPendingView mode="connecting" statusMessage={statusMessage} statusDanger={statusDanger} connectionTrouble={connectionTrouble} onRetry={() => { setConnectionTrouble(false); setStatusMessage(''); webRtc.createPeerConnection(); }} />;
+    return <ReceiverPendingView mode="connecting" statusMessage={grantMode && !key ? 'Waiting for the sender to approve…' : statusMessage} statusDanger={statusDanger} connectionTrouble={connectionTrouble} onRetry={() => { setConnectionTrouble(false); setStatusMessage(''); webRtc.createPeerConnection(); }} />;
   }
 
   return (
