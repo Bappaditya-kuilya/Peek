@@ -28,7 +28,7 @@ class FakePeerConnection {
 let fakePeer;
 beforeEach(() => {
   fakePeer = new FakePeerConnection();
-  global.RTCPeerConnection = vi.fn(() => fakePeer);
+  global.RTCPeerConnection = vi.fn(function () { return fakePeer; });
 });
 afterEach(() => {
   delete global.RTCPeerConnection;
