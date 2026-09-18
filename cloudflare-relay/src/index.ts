@@ -35,6 +35,8 @@ interface WebSocketAttachment {
 // resets with the connection, no storage needed for this ceiling.
 const wsMessageCounts = new WeakMap<WebSocket, number>();
 
+const WINDOW_MS = 3600000;
+
 export class PeekSession {
 	constructor(
 		private state: DurableObjectState,
@@ -145,8 +147,19 @@ export class PeekSession {
 
 	private async createSession(request: Request): Promise<Response> {
 		try {
-			const created = (await this.state.storage.get<number>("rate:session_create")) || 0;
-			if (created >= 10) {
+			const now = Date.now();
+			const record = await this.state.storage.get<{ count: number; windowStart: number } | number>("rate:session_create");
+			let count = 0;
+			let windowStart = now;
+			if (record && typeof record === "object") {
+				count = record.count;
+				windowStart = record.windowStart;
+				if (now - windowStart > WINDOW_MS) {
+					count = 0;
+					windowStart = now;
+				}
+			}
+			if (count >= 10) {
 				return new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
 					status: 429,
 					headers: { "Content-Type": "application/json" },
@@ -174,8 +187,7 @@ export class PeekSession {
 			};
 
 			await this.state.storage.put(`session:${sessionId}`, session);
-			await this.state.storage.put(`session_token:${token}`, sessionId);
-			await this.state.storage.put("rate:session_create", created + 1);
+			await this.state.storage.put("rate:session_create", { count: count + 1, windowStart });
 
 			return new Response(
 				JSON.stringify({ sessionId, token, expiresAt: session.expiresAt, fileCount: session.fileCount }),
@@ -215,6 +227,10 @@ export class PeekSession {
 
 			if (!blob || blob.byteLength === 0) {
 				return new Response(JSON.stringify({ error: "Empty body" }), { status: 400 });
+			}
+
+			if (blob.byteLength > 50 * 1024 * 1024) {
+				return new Response(JSON.stringify({ error: "File too large" }), { status: 413 });
 			}
 
 			const viewIdBytes = new Uint8Array(8);
@@ -293,10 +309,6 @@ export class PeekSession {
 	}
 
 	private async killSessionInternal(sessionId: string): Promise<void> {
-		const session = await this.state.storage.get<Session>(`session:${sessionId}`);
-		if (session) {
-			await this.state.storage.delete(`session_token:${session.token}`);
-		}
 		await this.state.storage.delete(`session:${sessionId}`);
 	}
 

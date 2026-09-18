@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { env } from 'cloudflare:test';
+import { env, runInDurableObject } from 'cloudflare:test';
 
 describe('PeekSession Durable Object', () => {
 	// ponytail: --no-isolate shares DO storage across the file, so each test
@@ -311,6 +311,23 @@ describe('PeekSession Durable Object', () => {
 			expect(response.status).toBe(429);
 		});
 
+		it('resets the create window after an hour', async () => {
+			const id = newId();
+			const stub = peekSessionNamespace.get(id);
+
+			await runInDurableObject(stub, async (_instance: any, state: DurableObjectState) => {
+				await state.storage.put(`rate:session_create`, { count: 10, windowStart: Date.now() - 3600001 });
+			});
+
+			const response = await stub.fetch('https://example.com/session', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ fileCount: 1 }),
+			});
+
+			expect(response.status).toBe(200);
+		});
+
 		it('enforces WebSocket message rate limit', async () => {
 			const id = newId();
 			const stub = peekSessionNamespace.get(id);
@@ -365,6 +382,38 @@ describe('PeekSession Durable Object', () => {
 			expect(killResponse.status).toBe(200);
 			const killData = await killResponse.json();
 			expect(killData.ok).toBe(true);
+		});
+
+		it('cleans up session on expiry', async () => {
+			const id = newId();
+			const stub = peekSessionNamespace.get(id);
+
+			const createResponse = await stub.fetch('https://example.com/session', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ fileCount: 1 }),
+			});
+			const { sessionId, token } = await createResponse.json();
+
+			// Backdate the session past its TTL via the DO storage handle.
+			await runInDurableObject(stub, async (_instance: any, state: DurableObjectState) => {
+				const key = `session:${sessionId}`;
+				const session: any = await state.storage.get(key);
+				await state.storage.put(key, { ...session, expiresAt: Date.now() - 1 });
+			});
+
+			// Any session lookup (here: kill) now runs the getSession expiry path.
+			const killResponse = await stub.fetch(`https://example.com/session/${sessionId}`, {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ token }),
+			});
+			expect(killResponse.status).toBe(403);
+
+			const leaked = await runInDurableObject(stub, async (_instance: any, state: DurableObjectState) => {
+				return await state.storage.get(`session:${sessionId}`);
+			});
+			expect(leaked).toBeUndefined();
 		});
 
 		it('kills session with valid token', async () => {
@@ -462,6 +511,25 @@ describe('PeekSession Durable Object', () => {
 			expect(response.status).toBe(200);
 			const data = await response.json();
 			expect(data.id).toMatch(/^[a-f0-9]{16}$/);
+		});
+
+		it('rejects view larger than 50MB with 413', async () => {
+			const id = newId();
+			const stub = peekSessionNamespace.get(id);
+
+			const response = await stub.fetch('https://example.com/view', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/octet-stream',
+					'X-Filename': 'big.bin',
+					'X-Mime-Type': 'application/octet-stream',
+					'X-Expires-In': '15',
+					'X-Once-Only': 'false',
+				},
+				body: new Uint8Array(50 * 1024 * 1024 + 1).buffer,
+			});
+
+			expect(response.status).toBe(413);
 		});
 
 		it('retrieves a view via GET /view/:id', async () => {
