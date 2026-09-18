@@ -1,1 +1,7 @@
 .vercel
+# Unused generator outputs (inline-shared.sh builds all of src/shared/*;
+# only the imported ones are used). Build artifacts, never commit.
+/public/inlined-iceMonitor.js
+/public/inlined-transport.js
+/public/receiver/inlined-iceMonitor.js
+/public/receiver/inlined-transport.js
