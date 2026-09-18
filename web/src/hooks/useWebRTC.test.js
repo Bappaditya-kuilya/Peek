@@ -88,3 +88,51 @@ describe('useWebRTC ICE restart', () => {
     expect(onFallbackNeeded).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('useWebRTC data channel dispatch', () => {
+  function makeChannel() {
+    return { binaryType: '', onmessage: null, onopen: null, onclose: null, close: vi.fn(), send: vi.fn() };
+  }
+
+  function setupReceiverPath(callbacks) {
+    const { result } = renderHook(() => useWebRTC(callbacks));
+    const channel = makeChannel();
+    act(() => result.current.createPeerConnection());
+    act(() => fakePeer.ondatachannel({ channel }));
+    return channel;
+  }
+
+  it('forwards binary to the screen handler instead of dropping it', () => {
+    const onBinary = vi.fn();
+    const onDeviceId = vi.fn();
+    const channel = setupReceiverPath({
+      onDeviceId,
+      onDataChannel(ch) {
+        ch.onmessage = (event) => onBinary(event.data);
+      },
+    });
+
+    const bytes = new Uint8Array([1, 2, 3]).buffer;
+    act(() => channel.onmessage({ data: bytes }));
+
+    expect(onBinary).toHaveBeenCalledTimes(1);
+    expect(onBinary).toHaveBeenCalledWith(bytes);
+    expect(onDeviceId).not.toHaveBeenCalled();
+  });
+
+  it('still routes device-id strings to onDeviceId', () => {
+    const onBinary = vi.fn();
+    const onDeviceId = vi.fn();
+    const channel = setupReceiverPath({
+      onDeviceId,
+      onDataChannel(ch) {
+        ch.onmessage = (event) => onBinary(event.data);
+      },
+    });
+
+    act(() => channel.onmessage({ data: JSON.stringify({ type: 'device-id', deviceId: 'd1' }) }));
+
+    expect(onDeviceId).toHaveBeenCalledWith('d1');
+    expect(onBinary).not.toHaveBeenCalled();
+  });
+});
