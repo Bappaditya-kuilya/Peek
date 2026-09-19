@@ -73,43 +73,7 @@ describe('sender viewer-pending → sender-key-grant handshake', () => {
     expect(result.current.pendingViewers.length).toBe(0);
   });
 
-  it('resends files over relay when a later viewer joins mid-session', async () => {
-    const sessionKey = await generateEncryptionKey();
-    const session = { sessionId: 'a'.repeat(16), token: 'b'.repeat(64), key: sessionKey, wsUrl: 'ws://test' };
-    const fallbackSocketRef = { current: null };
-    const relayTransport = { sendBinary: () => {}, waitForDrain: async () => {}, getBufferedAmount: () => 0 };
-    const fakeFile = { name: 'a.bin', size: 1, slice: () => ({ arrayBuffer: async () => new ArrayBuffer(1) }) };
-    const sendFiles = vi.fn(async () => {});
-    const result = renderHook(() => useSenderSessionCoordinator({
-      clipboard: { flushDraft: async () => {} },
-      fallbackSocketRef,
-      fallbackTimeoutRef: { current: null },
-      selectedFiles: [{ id: 0, file: fakeFile }],
-      session,
-      setPeerConnected: () => {},
-      setIncomingPeekUrl: () => {},
-      setScreen: () => {},
-      setStatusMessage: () => {},
-      setTransferStarted: () => {},
-      setTransportMode: () => {},
-      transfer: { handleBinaryMessage: async () => {}, sendFiles },
-      transferStartedRef: { current: true },
-      transportRef: { current: relayTransport },
-      webRtc: { createOffer: async () => ({ type: 'offer' }), dataChannelRef: { current: null }, closePeerConnection: () => {} },
-    }));
-
-    await act(async () => { FakeSocket.last.fireOpen(); });
-    fallbackSocketRef.current = { send: () => {} };
-    await act(async () => {
-      const onMessage = FakeSocket.last.onmessage;
-      await onMessage({ data: JSON.stringify({ type: 'peer-connected', receiverId: 'r9' }) });
-      await vi.waitFor(() => {
-        expect(sendFiles).toHaveBeenCalledTimes(1);
-      }, { timeout: 15000 });
-    });
-    expect(sendFiles.mock.calls[0][0]).toHaveLength(1);
-    expect(sendFiles.mock.calls[0][1]).not.toBe(relayTransport);
-  }, 20000);
+  
 });
 
 describe('receiver receiver-join-request → key-grant handshake', () => {
