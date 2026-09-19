@@ -46,12 +46,10 @@ function parseJoinInfo() {
     return { mode: 'code-entry' };
   }
 
-  const queryToken = url.searchParams.get('t') || '';
-  const queryKeyBase64 = url.searchParams.get('k') || '';
   const fragment = window.location.hash.replace(/^#/, '');
   const [fragmentToken, fragmentKeyBase64] = fragment.split('.');
-  const token = queryToken || fragmentToken || '';
-  const keyBase64 = queryKeyBase64 || fragmentKeyBase64 || '';
+  const token = fragmentToken || '';
+  const keyBase64 = fragmentKeyBase64 || '';
 
   return {
     keyBase64,
@@ -249,7 +247,14 @@ function render() {
     </div>
   `;
 
-  bindReceiverActions();
+  const prev = document.activeElement;
+  if (prev?.id === 'clipboard-input') {
+    const newTextarea = document.getElementById('clipboard-input');
+    if (newTextarea) {
+      newTextarea.focus();
+      newTextarea.setSelectionRange(newTextarea.value.length, newTextarea.value.length);
+    }
+  }
 }
 
 function bindCodeInput() {
@@ -449,7 +454,12 @@ async function setupConnection() {
       return;
     }
 
-    const message = JSON.parse(event.data);
+    let message;
+    try {
+      message = JSON.parse(event.data);
+    } catch {
+      return;
+    }
     if (message.expiresAt) {
       state.expiresAt = message.expiresAt;
     }
@@ -505,6 +515,7 @@ async function setupConnection() {
       window.setTimeout(() => {
         if (!state.sessionEnded) {
           setupConnection().catch(() => {
+            state.socket = null;
             state.statusMessage = 'Unable to reconnect. Refresh and scan again.';
             state.statusDanger = true;
             render();
@@ -522,9 +533,71 @@ async function setupConnection() {
   }, 5000);
 }
 
-function bindReceiverActions() {
-  const clipboardInput = document.getElementById('clipboard-input');
-  clipboardInput?.addEventListener('input', (event) => {
+function setupDelegatedListeners() {
+  document.getElementById('app').addEventListener('click', async (event) => {
+    const target = event.target;
+
+    if (target.matches('[data-download]')) {
+      const fileId = Number(target.getAttribute('data-download'));
+      const file = state.receivedFiles.find((entry) => entry.id === fileId);
+      if (!file?.blob) return;
+      const url = URL.createObjectURL(file.blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = safeBaseName(file.name);
+      anchor.click();
+      URL.revokeObjectURL(url);
+      await sendEncryptedPacket(encodeDownloadNoticePacket(fileId));
+      return;
+    }
+
+    if (target.id === 'clipboard-copy') {
+      try {
+        await navigator.clipboard.writeText(state.clipboardReceived);
+        state.clipboardCopyState = 'copied';
+      } catch {
+        state.clipboardCopyState = 'failed';
+      }
+      render();
+      window.setTimeout(() => {
+        state.clipboardCopyState = 'idle';
+        render();
+      }, 1500);
+      return;
+    }
+
+    if (target.id === 'send-back') {
+      document.getElementById('send-back-input')?.click();
+      return;
+    }
+
+    if (target.id === 'kill-button') {
+      state.socket?.send(JSON.stringify({ type: 'kill-session' }));
+      return;
+    }
+
+    if (target.id === 'zip-download') {
+      const files = state.receivedFiles.filter((file) => file.blob);
+      if (!files.length) return;
+      const zipModule = await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm');
+      const zip = new zipModule.default();
+      files.forEach((file) => zip.file(safeBaseName(file.name), file.blob));
+      const blob = await zip.generateAsync({
+        type: 'blob',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 6 },
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `peek-${state.joinInfo.sessionId.slice(0, 6)}.zip`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+  });
+
+  document.getElementById('clipboard-input')?.addEventListener('input', (event) => {
     state.clipboardDraft = normalizeClipboardText(event.target.value);
     if (event.target.value !== state.clipboardDraft) {
       event.target.value = state.clipboardDraft;
@@ -546,71 +619,17 @@ function bindReceiverActions() {
     }, CLIPBOARD_DEBOUNCE_MS);
   });
 
-  document.getElementById('clipboard-copy')?.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(state.clipboardReceived);
-      state.clipboardCopyState = 'copied';
-    } catch {
-      state.clipboardCopyState = 'failed';
-    }
-    render();
-    window.setTimeout(() => {
-      state.clipboardCopyState = 'idle';
-      render();
-    }, 1500);
-  });
-
-  document.querySelectorAll('[data-download]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      const fileId = Number(button.getAttribute('data-download'));
-      const file = state.receivedFiles.find((entry) => entry.id === fileId);
-      if (!file?.blob) return;
-      const url = URL.createObjectURL(file.blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = safeBaseName(file.name);
-      anchor.click();
-      URL.revokeObjectURL(url);
-      await sendEncryptedPacket(encodeDownloadNoticePacket(fileId));
-    });
-  });
-
-  const sendBackButton = document.getElementById('send-back');
-  const sendBackInput = document.getElementById('send-back-input');
-  sendBackButton?.addEventListener('click', () => sendBackInput?.click());
-  sendBackInput?.addEventListener('change', async (event) => {
+  document.getElementById('send-back-input')?.addEventListener('change', async (event) => {
     const files = Array.from(event.target.files || []);
     if (files.length) {
       await sendFiles(files);
       event.target.value = '';
     }
   });
-
-  document.getElementById('kill-button')?.addEventListener('click', () => {
-    state.socket?.send(JSON.stringify({ type: 'kill-session' }));
-  });
-
-  document.getElementById('zip-download')?.addEventListener('click', async () => {
-    const files = state.receivedFiles.filter((file) => file.blob);
-    if (!files.length) return;
-    const zipModule = await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm');
-    const zip = new zipModule.default();
-    files.forEach((file) => zip.file(safeBaseName(file.name), file.blob));
-    const blob = await zip.generateAsync({
-      type: 'blob',
-      compression: 'DEFLATE',
-      compressionOptions: { level: 6 },
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `peek-${state.joinInfo.sessionId.slice(0, 6)}.zip`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  });
 }
 
 render();
+setupDelegatedListeners();
 
 if (state.joinInfo.mode === 'full-link') {
   setupConnection().catch(() => {
