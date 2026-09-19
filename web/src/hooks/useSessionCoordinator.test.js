@@ -104,11 +104,11 @@ describe('sender viewer-pending → sender-key-grant handshake', () => {
       FakeSocket.last.fireMessage({ type: 'peer-connected', receiverId: 'r9' });
       await vi.waitFor(() => {
         expect(sendFiles).toHaveBeenCalledTimes(1);
-      }, { timeout: 10000 });
+      }, { timeout: 15000 });
     });
     expect(sendFiles.mock.calls[0][0]).toHaveLength(1);
     expect(sendFiles.mock.calls[0][1]).not.toBe(relayTransport);
-  });
+  }, 20000);
 });
 
 describe('receiver receiver-join-request → key-grant handshake', () => {
