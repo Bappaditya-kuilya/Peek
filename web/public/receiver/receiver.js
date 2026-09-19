@@ -297,11 +297,13 @@ function getTransport() {
     sendBinary(buffer) {
       if (state.dataChannel?.readyState === 'open') {
         state.dataChannel.send(buffer);
-        return;
+        return true;
       }
       if (state.socket?.readyState === WebSocket.OPEN) {
         state.socket.send(buffer);
+        return true;
       }
+      return false;
     },
   };
 }

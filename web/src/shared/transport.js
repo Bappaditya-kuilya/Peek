@@ -20,11 +20,13 @@ export function createTransport(dataChannelRef, fallbackSocketRef) {
     sendBinary(buffer) {
       if (dataChannelRef.current?.readyState === 'open') {
         dataChannelRef.current.send(buffer);
-        return;
+        return true;
       }
       if (fallbackSocketRef.current?.readyState === WebSocket.OPEN) {
         fallbackSocketRef.current.send(buffer);
+        return true;
       }
+      return false;
     },
     waitForDrain() {
       const highWater = 16 * 1024 * 1024;
