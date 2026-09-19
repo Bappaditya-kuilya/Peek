@@ -581,8 +581,7 @@ function setupDelegatedListeners() {
     if (target.id === 'zip-download') {
       const files = state.receivedFiles.filter((file) => file.blob);
       if (!files.length) return;
-      const zipModule = await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm');
-      const zip = new zipModule.default();
+    const zip = new JSZip();
       files.forEach((file) => zip.file(safeBaseName(file.name), file.blob));
       const blob = await zip.generateAsync({
         type: 'blob',
