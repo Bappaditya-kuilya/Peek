@@ -1,5 +1,6 @@
 export interface Env {
 	PEEK_SESSION: DurableObjectNamespace;
+	INTERNAL_SYNC_SECRET: string;
 }
 
 interface ReceiverInfo {
@@ -228,7 +229,10 @@ export class PeekSession {
 					await target.fetch(
 						new Request("https://internal/internal/session-sync", {
 							method: "POST",
-							headers: { "Content-Type": "application/json" },
+							headers: {
+								"Content-Type": "application/json",
+								"X-Internal-Sync": this.env.INTERNAL_SYNC_SECRET,
+							},
 							body: JSON.stringify({ id: sessionId, token, expiresAt: session.expiresAt, fileCount: session.fileCount }),
 						})
 					);
@@ -248,6 +252,10 @@ export class PeekSession {
 
 	private async handleInternalSessionSync(request: Request): Promise<Response> {
 		try {
+			const syncSecret = request.headers.get("X-Internal-Sync");
+			if (!syncSecret || syncSecret !== this.env.INTERNAL_SYNC_SECRET) {
+				return new Response("Unauthorized", { status: 401 });
+			}
 			const body = (await request.json().catch(() => ({}))) as { id?: unknown; token?: unknown; expiresAt?: unknown; fileCount?: unknown };
 			if (typeof body.id !== "string" || !/^[a-f0-9]{16}$/i.test(body.id)) {
 				return new Response("Bad sync", { status: 400 });
