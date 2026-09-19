@@ -367,12 +367,14 @@ export class PeekSession {
 		}
 
 		if (entry.onceOnly) {
-			await this.state.storage.put(`view:${viewId}`, { ...entry, viewed: true });
+			// Delete first so a concurrent GET gets 404 instead of a second copy.
+			await this.state.storage.delete(`view:${viewId}`);
 		}
 
 		return new Response(entry.blob, {
 			headers: {
 				"Content-Type": "application/octet-stream",
+				"X-Content-Type-Options": "nosniff",
 				"X-Expires-At": String(entry.expiresAt),
 				"X-Filename": entry.filename,
 				"X-Mime-Type": entry.mimeType,
@@ -715,9 +717,9 @@ function corsHeaders(origin: string | null) {
 		"http://localhost:5173",
 		"http://127.0.0.1:5173",
 	];
-	const allowOrigin = origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+	const allowOrigin = origin && allowedOrigins.includes(origin) ? origin : null;
 	return {
-		"Access-Control-Allow-Origin": allowOrigin,
+		...(allowOrigin ? { "Access-Control-Allow-Origin": allowOrigin } : {}),
 		"Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
 		"Access-Control-Allow-Headers": "Content-Type, Authorization, X-Expires-In, X-Filename, X-Mime-Type, X-Once-Only",
 		"Access-Control-Expose-Headers": "X-Expires-At, X-Filename, X-Mime-Type",
