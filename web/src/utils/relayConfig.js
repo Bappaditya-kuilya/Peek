@@ -1,5 +1,5 @@
-const PRODUCTION_HTTP_URL = 'https://peek-relay.bappadityakuilya.workers.dev';
-const PRODUCTION_WS_URL = 'wss://peek-relay.bappadityakuilya.workers.dev';
+const PRODUCTION_HTTP_URL = 'https://peek-relay.famous-wolf.workers.dev';
+const PRODUCTION_WS_URL = 'wss://peek-relay.famous-wolf.workers.dev';
 
 function isLocalHost(hostname = window.location.hostname) {
   return (

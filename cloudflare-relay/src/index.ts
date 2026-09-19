@@ -701,6 +701,7 @@ function corsHeaders(origin: string | null) {
 	const allowedOrigins = [
 		"https://peekapp.vercel.app",
 		"https://peek.dev",
+		"https://web-six-livid-17.vercel.app",
 		"http://localhost:5173",
 		"http://127.0.0.1:5173",
 	];
