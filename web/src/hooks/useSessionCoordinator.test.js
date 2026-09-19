@@ -100,7 +100,7 @@ describe('sender viewer-pending → sender-key-grant handshake', () => {
 
     await act(async () => { FakeSocket.last.fireOpen(); });
     fallbackSocketRef.current = { send: () => {} };
-    await act(async () => { FakeSocket.last.fireMessage({ type: 'peer-connected', receiverId: 'r9' }); });
+    FakeSocket.last.fireMessage({ type: 'peer-connected', receiverId: 'r9' });
     await vi.waitFor(() => {
       expect(sendFiles).toHaveBeenCalledTimes(1);
     }, { timeout: 5000 });
