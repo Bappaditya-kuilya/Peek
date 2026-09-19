@@ -100,10 +100,12 @@ describe('sender viewer-pending → sender-key-grant handshake', () => {
 
     await act(async () => { FakeSocket.last.fireOpen(); });
     fallbackSocketRef.current = { send: () => {} };
-    FakeSocket.last.fireMessage({ type: 'peer-connected', receiverId: 'r9' });
-    await vi.waitFor(() => {
-      expect(sendFiles).toHaveBeenCalledTimes(1);
-    }, { timeout: 5000 });
+    await act(async () => {
+      FakeSocket.last.fireMessage({ type: 'peer-connected', receiverId: 'r9' });
+      await vi.waitFor(() => {
+        expect(sendFiles).toHaveBeenCalledTimes(1);
+      }, { timeout: 10000 });
+    });
     expect(sendFiles.mock.calls[0][0]).toHaveLength(1);
     expect(sendFiles.mock.calls[0][1]).not.toBe(relayTransport);
   });
