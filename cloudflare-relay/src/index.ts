@@ -246,7 +246,8 @@ export class PeekSession {
 				{ headers: { "Content-Type": "application/json" } }
 			);
 		} catch (e) {
-			return new Response(JSON.stringify({ error: String(e) }), { status: 500 });
+			console.error('createSession error:', e);
+			return new Response(JSON.stringify({ error: "Internal error" }), { status: 500 });
 		}
 	}
 
@@ -281,7 +282,8 @@ export class PeekSession {
 			await this.state.storage.put(`session:${body.id}`, session);
 			return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
 		} catch (e) {
-			return new Response(JSON.stringify({ error: String(e) }), { status: 500 });
+			console.error('handleInternalSessionSync error:', e);
+			return new Response(JSON.stringify({ error: "Internal error" }), { status: 500 });
 		}
 	}
 
@@ -341,7 +343,8 @@ export class PeekSession {
 				{ headers: { "Content-Type": "application/json" } }
 			);
 		} catch (e) {
-			return new Response(JSON.stringify({ error: String(e) }), { status: 500 });
+			console.error('createView error:', e);
+			return new Response(JSON.stringify({ error: "Internal error" }), { status: 500 });
 		}
 	}
 
@@ -719,6 +722,7 @@ function corsHeaders(origin: string | null) {
 	];
 	const allowOrigin = origin && allowedOrigins.includes(origin) ? origin : null;
 	return {
+		"X-Content-Type-Options": "nosniff",
 		...(allowOrigin ? { "Access-Control-Allow-Origin": allowOrigin } : {}),
 		"Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
 		"Access-Control-Allow-Headers": "Content-Type, Authorization, X-Expires-In, X-Filename, X-Mime-Type, X-Once-Only",
