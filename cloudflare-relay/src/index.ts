@@ -384,7 +384,11 @@ export class PeekSession {
 
 	private async validateToken(sessionId: string, token: string): Promise<boolean> {
 		const session = await this.getSession(sessionId);
-		return session?.token === token;
+		if (!session) return false;
+		const a = new TextEncoder().encode(session.token);
+		const b = new TextEncoder().encode(token);
+		if (a.length !== b.length) return false;
+		return crypto.subtle.timingSafeEqual(a, b);
 	}
 
 	private async killSessionInternal(sessionId: string): Promise<void> {
