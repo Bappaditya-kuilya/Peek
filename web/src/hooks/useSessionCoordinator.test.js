@@ -80,7 +80,7 @@ describe('sender viewer-pending → sender-key-grant handshake', () => {
     const relayTransport = { sendBinary: () => {}, waitForDrain: async () => {}, getBufferedAmount: () => 0 };
     const fakeFile = { name: 'a.bin', size: 1, slice: () => ({ arrayBuffer: async () => new ArrayBuffer(1) }) };
     const sendFiles = vi.fn(async () => {});
-    renderHook(() => useSenderSessionCoordinator({
+    const result = renderHook(() => useSenderSessionCoordinator({
       clipboard: { flushDraft: async () => {} },
       fallbackSocketRef,
       fallbackTimeoutRef: { current: null },
