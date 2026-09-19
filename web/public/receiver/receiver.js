@@ -102,6 +102,90 @@ function fileIconSvg(type = 'doc') {
   </svg>`);
 }
 
+function updateChunkProgress(fileId) {
+  const file = state.incomingFiles.get(fileId);
+  if (!file) return;
+  const row = document.querySelector(`[data-file-row="${fileId}"]`);
+  if (!row) return;
+
+  // Update status text
+  const statusEl = row.querySelector(`[data-status="${fileId}"]`);
+  if (statusEl) {
+    if (file.status === 'done') {
+      statusEl.className = 'file-status success';
+      statusEl.textContent = '✓';
+    } else {
+      statusEl.textContent = file.progress > 0 ? `${file.progress}%` : '—';
+    }
+  }
+
+  // Update or add progress bar
+  let progressContainer = row.querySelector(`[data-progress="${fileId}"]`);
+  if (file.progress > 0 && file.progress < 100) {
+    if (!progressContainer) {
+      progressContainer = document.createElement('div');
+      progressContainer.className = 'progress';
+      progressContainer.setAttribute('data-progress', fileId);
+      progressContainer.innerHTML = '<div class="progress-bar"></div>';
+      row.appendChild(progressContainer);
+    }
+    progressContainer.querySelector('.progress-bar').style.width = `${file.progress}%`;
+  } else if (progressContainer) {
+    progressContainer.remove();
+  }
+}
+
+function markFileComplete(fileId) {
+  const file = state.incomingFiles.get(fileId);
+  if (!file) return;
+  const row = document.querySelector(`[data-file-row="${fileId}"]`);
+  if (!row) return;
+
+  // Update status to checkmark
+  const statusEl = row.querySelector(`[data-status="${fileId}"]`);
+  if (statusEl) {
+    statusEl.className = 'file-status success';
+    statusEl.textContent = '✓';
+  }
+
+  // Remove progress bar
+  const progressEl = row.querySelector(`[data-progress="${fileId}"]`);
+  if (progressEl) progressEl.remove();
+
+  // Add download button if not present
+  if (!row.querySelector(`[data-download="${fileId}"]`)) {
+    const btn = document.createElement('button');
+    btn.className = 'compact-button';
+    btn.setAttribute('data-download', fileId);
+    btn.textContent = 'Download';
+    row.appendChild(btn);
+  }
+
+  // Add "Download all as ZIP" button if not present
+  if (!document.getElementById('zip-download') && state.receivedFiles.some((f) => f.blob)) {
+    const stackMd = document.querySelector('.stack-md');
+    if (stackMd) {
+      const zipBtn = document.createElement('button');
+      zipBtn.className = 'button-primary';
+      zipBtn.id = 'zip-download';
+      zipBtn.textContent = 'Download all as ZIP';
+      stackMd.appendChild(zipBtn);
+    }
+  }
+}
+
+let timerInterval = null;
+function startTimer() {
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    const timerEl = document.querySelector('.timer');
+    if (timerEl && state.expiresAt) {
+      timerEl.textContent = formatTimer(state.expiresAt);
+      timerEl.className = `timer ${classifyTimer(state.expiresAt)}`;
+    }
+  }, 1000);
+}
+
 function render() {
   const app = document.getElementById('app');
 
@@ -175,16 +259,16 @@ function render() {
   const rows = state.receivedFiles
     .map((file) => {
       const progress = file.progress > 0 && file.progress < 100
-        ? rawHtml(`<div class="progress"><div class="progress-bar" style="width:${Number(file.progress)}%"></div></div>`)
+        ? rawHtml(`<div class="progress" data-progress="${Number(file.id)}"><div class="progress-bar" style="width:${Number(file.progress)}%"></div></div>`)
         : '';
       const action = file.blob
         ? rawHtml(`<button class="compact-button" data-download="${Number(file.id)}">Download</button>`)
         : '';
       const status =
         file.status === 'done'
-          ? rawHtml('<span class="file-status success">✓</span>')
-          : rawHtml(`<span class="file-status">${file.progress > 0 ? `${Number(file.progress)}%` : '—'}</span>`);
-      return rawHtml(html`<div class="row">
+          ? rawHtml(`<span class="file-status success" data-status="${Number(file.id)}">✓</span>`)
+          : rawHtml(`<span class="file-status" data-status="${Number(file.id)}">${file.progress > 0 ? `${Number(file.progress)}%` : '—'}</span>`);
+      return rawHtml(html`<div class="row" data-file-row="${Number(file.id)}">
         <div class="row-left">
           ${fileIconSvg(file.type?.startsWith('image/') ? 'image' : 'doc')}
           <div class="row-main">
@@ -255,6 +339,8 @@ function render() {
       newTextarea.setSelectionRange(newTextarea.value.length, newTextarea.value.length);
     }
   }
+
+  if (state.joined && state.expiresAt) startTimer();
 }
 
 function bindCodeInput() {
@@ -375,7 +461,7 @@ async function handleBinaryMessage(buffer) {
     const receivedSize = file.chunks.reduce((total, chunk) => total + (chunk ? chunk.byteLength : 0), 0);
     file.progress = Math.min(100, Math.round((receivedSize / file.size) * 100) || 0);
     file.status = 'sending';
-    render();
+    updateChunkProgress(packet.payload.fileId);
     return;
   }
 
@@ -385,7 +471,7 @@ async function handleBinaryMessage(buffer) {
     file.blob = new Blob(file.chunks, { type: file.type || 'application/octet-stream' });
     file.progress = 100;
     file.status = 'done';
-    render();
+    markFileComplete(packet.payload.fileId);
     return;
   }
 
