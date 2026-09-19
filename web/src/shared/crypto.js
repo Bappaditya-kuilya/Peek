@@ -4,11 +4,9 @@ export const encoder = new TextEncoder();
 export const decoder = new TextDecoder();
 
 export function base64FromBytes(bytes) {
-  let binary = '';
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return window.btoa(binary);
+  return window.btoa(
+    Array.from(bytes, (b) => String.fromCharCode(b)).join('')
+  );
 }
 
 export function bytesFromBase64(base64) {
@@ -66,6 +64,9 @@ export async function encryptChunk(key, chunk) {
 
 export async function decryptChunk(key, encryptedBuffer) {
   const encryptedBytes = new Uint8Array(encryptedBuffer);
+  if (encryptedBytes.byteLength < IV_LENGTH) {
+    throw new RangeError('Encrypted buffer too short');
+  }
   const iv = encryptedBytes.slice(0, IV_LENGTH);
   const ciphertext = encryptedBytes.slice(IV_LENGTH);
 
