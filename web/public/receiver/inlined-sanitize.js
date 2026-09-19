@@ -1,9 +1,12 @@
 // Escape a string for safe insertion into innerHTML. JSX already escapes text
 // nodes, so this exists for any non-JSX DOM write and as a defensive helper.
 function sanitizeFilename(name) {
-  const div = document.createElement('div');
-  div.appendChild(document.createTextNode(name == null ? '' : String(name)));
-  return div.innerHTML;
+  return String(name == null ? '' : name)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // Reduce a peer-supplied name to a safe basename for use as a download

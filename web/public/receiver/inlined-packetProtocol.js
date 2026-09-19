@@ -58,7 +58,6 @@ function encodeChunkPacket(fileId, chunkIndex, chunkBytes) {
 
 function decodePacket(buffer) {
   const bytes = new Uint8Array(buffer);
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const type = bytes[0];
 
   if (type === PACKET_MANIFEST) {
@@ -68,21 +67,18 @@ function decodePacket(buffer) {
     };
   }
 
-  if (type === PACKET_FILE_COMPLETE) {
+  if (type === PACKET_FILE_COMPLETE || type === PACKET_DOWNLOAD_NOTICE) {
+    if (bytes.length < 3) throw new Error('Truncated packet');
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     return {
-      type: 'file-complete',
-      payload: { fileId: view.getUint16(1) },
-    };
-  }
-
-  if (type === PACKET_DOWNLOAD_NOTICE) {
-    return {
-      type: 'download-notice',
+      type: type === PACKET_FILE_COMPLETE ? 'file-complete' : 'download-notice',
       payload: { fileId: view.getUint16(1) },
     };
   }
 
   if (type === PACKET_CHUNK) {
+    if (bytes.length < 7) throw new Error('Truncated chunk packet');
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     return {
       type: 'chunk',
       payload: {

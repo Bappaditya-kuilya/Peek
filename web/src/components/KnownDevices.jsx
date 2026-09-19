@@ -69,7 +69,7 @@ export function KnownDevices({ onWakeDevice, isConnected, disabled = false }) {
       <ul className="device-list">
         {devices.map(device => (
           <li key={device.deviceId} className="device-row">
-            <div className="device-info" onClick={() => !disabled && handleWake(deviceId)}>
+            <div className="device-info" onClick={() => !disabled && handleWake(device.deviceId)}>
               {editingId === device.deviceId ? (
                 <input
                   type="text"

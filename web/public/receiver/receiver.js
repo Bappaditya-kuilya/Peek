@@ -1,6 +1,6 @@
-const PRODUCTION_RELAY_HTTP_URL = 'https://peek-relay-eku9.onrender.com';
-const PRODUCTION_RELAY_WS_URL = 'wss://peek-relay-eku9.onrender.com';
-const LOCAL_RELAY_PORT = '3000';
+const PRODUCTION_RELAY_HTTP_URL = 'https://peek-relay.bappadityakuilya.workers.dev';
+const PRODUCTION_RELAY_WS_URL = 'wss://peek-relay.bappadityakuilya.workers.dev';
+const LOCAL_RELAY_PORT = '8787';
 const isLocalHost = (
   window.location.hostname === 'localhost' ||
   window.location.hostname === '127.0.0.1' ||
@@ -46,12 +46,10 @@ function parseJoinInfo() {
     return { mode: 'code-entry' };
   }
 
-  const queryToken = url.searchParams.get('t') || '';
-  const queryKeyBase64 = url.searchParams.get('k') || '';
   const fragment = window.location.hash.replace(/^#/, '');
   const [fragmentToken, fragmentKeyBase64] = fragment.split('.');
-  const token = queryToken || fragmentToken || '';
-  const keyBase64 = queryKeyBase64 || fragmentKeyBase64 || '';
+  const token = fragmentToken || '';
+  const keyBase64 = fragmentKeyBase64 || '';
 
   return {
     keyBase64,
@@ -102,6 +100,90 @@ function fileIconSvg(type = 'doc') {
     <path d="M10 1V4H13" stroke="var(--color-text-tertiary)" stroke-width="1.2"></path>
     ${lines}
   </svg>`);
+}
+
+function updateChunkProgress(fileId) {
+  const file = state.incomingFiles.get(fileId);
+  if (!file) return;
+  const row = document.querySelector(`[data-file-row="${fileId}"]`);
+  if (!row) return;
+
+  // Update status text
+  const statusEl = row.querySelector(`[data-status="${fileId}"]`);
+  if (statusEl) {
+    if (file.status === 'done') {
+      statusEl.className = 'file-status success';
+      statusEl.textContent = '✓';
+    } else {
+      statusEl.textContent = file.progress > 0 ? `${file.progress}%` : '—';
+    }
+  }
+
+  // Update or add progress bar
+  let progressContainer = row.querySelector(`[data-progress="${fileId}"]`);
+  if (file.progress > 0 && file.progress < 100) {
+    if (!progressContainer) {
+      progressContainer = document.createElement('div');
+      progressContainer.className = 'progress';
+      progressContainer.setAttribute('data-progress', fileId);
+      progressContainer.innerHTML = '<div class="progress-bar"></div>';
+      row.appendChild(progressContainer);
+    }
+    progressContainer.querySelector('.progress-bar').style.width = `${file.progress}%`;
+  } else if (progressContainer) {
+    progressContainer.remove();
+  }
+}
+
+function markFileComplete(fileId) {
+  const file = state.incomingFiles.get(fileId);
+  if (!file) return;
+  const row = document.querySelector(`[data-file-row="${fileId}"]`);
+  if (!row) return;
+
+  // Update status to checkmark
+  const statusEl = row.querySelector(`[data-status="${fileId}"]`);
+  if (statusEl) {
+    statusEl.className = 'file-status success';
+    statusEl.textContent = '✓';
+  }
+
+  // Remove progress bar
+  const progressEl = row.querySelector(`[data-progress="${fileId}"]`);
+  if (progressEl) progressEl.remove();
+
+  // Add download button if not present
+  if (!row.querySelector(`[data-download="${fileId}"]`)) {
+    const btn = document.createElement('button');
+    btn.className = 'compact-button';
+    btn.setAttribute('data-download', fileId);
+    btn.textContent = 'Download';
+    row.appendChild(btn);
+  }
+
+  // Add "Download all as ZIP" button if not present
+  if (!document.getElementById('zip-download') && state.receivedFiles.some((f) => f.blob)) {
+    const stackMd = document.querySelector('.stack-md');
+    if (stackMd) {
+      const zipBtn = document.createElement('button');
+      zipBtn.className = 'button-primary';
+      zipBtn.id = 'zip-download';
+      zipBtn.textContent = 'Download all as ZIP';
+      stackMd.appendChild(zipBtn);
+    }
+  }
+}
+
+let timerInterval = null;
+function startTimer() {
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    const timerEl = document.querySelector('.timer');
+    if (timerEl && state.expiresAt) {
+      timerEl.textContent = formatTimer(state.expiresAt);
+      timerEl.className = `timer ${classifyTimer(state.expiresAt)}`;
+    }
+  }, 1000);
 }
 
 function render() {
@@ -177,16 +259,16 @@ function render() {
   const rows = state.receivedFiles
     .map((file) => {
       const progress = file.progress > 0 && file.progress < 100
-        ? rawHtml(`<div class="progress"><div class="progress-bar" style="width:${Number(file.progress)}%"></div></div>`)
+        ? rawHtml(`<div class="progress" data-progress="${Number(file.id)}"><div class="progress-bar" style="width:${Number(file.progress)}%"></div></div>`)
         : '';
       const action = file.blob
         ? rawHtml(`<button class="compact-button" data-download="${Number(file.id)}">Download</button>`)
         : '';
       const status =
         file.status === 'done'
-          ? rawHtml('<span class="file-status success">✓</span>')
-          : rawHtml(`<span class="file-status">${file.progress > 0 ? `${Number(file.progress)}%` : '—'}</span>`);
-      return rawHtml(html`<div class="row">
+          ? rawHtml(`<span class="file-status success" data-status="${Number(file.id)}">✓</span>`)
+          : rawHtml(`<span class="file-status" data-status="${Number(file.id)}">${file.progress > 0 ? `${Number(file.progress)}%` : '—'}</span>`);
+      return rawHtml(html`<div class="row" data-file-row="${Number(file.id)}">
         <div class="row-left">
           ${fileIconSvg(file.type?.startsWith('image/') ? 'image' : 'doc')}
           <div class="row-main">
@@ -249,7 +331,16 @@ function render() {
     </div>
   `;
 
-  bindReceiverActions();
+  const prev = document.activeElement;
+  if (prev?.id === 'clipboard-input') {
+    const newTextarea = document.getElementById('clipboard-input');
+    if (newTextarea) {
+      newTextarea.focus();
+      newTextarea.setSelectionRange(newTextarea.value.length, newTextarea.value.length);
+    }
+  }
+
+  if (state.joined && state.expiresAt) startTimer();
 }
 
 function bindCodeInput() {
@@ -292,11 +383,13 @@ function getTransport() {
     sendBinary(buffer) {
       if (state.dataChannel?.readyState === 'open') {
         state.dataChannel.send(buffer);
-        return;
+        return true;
       }
       if (state.socket?.readyState === WebSocket.OPEN) {
         state.socket.send(buffer);
+        return true;
       }
+      return false;
     },
   };
 }
@@ -368,7 +461,7 @@ async function handleBinaryMessage(buffer) {
     const receivedSize = file.chunks.reduce((total, chunk) => total + (chunk ? chunk.byteLength : 0), 0);
     file.progress = Math.min(100, Math.round((receivedSize / file.size) * 100) || 0);
     file.status = 'sending';
-    render();
+    updateChunkProgress(packet.payload.fileId);
     return;
   }
 
@@ -378,7 +471,7 @@ async function handleBinaryMessage(buffer) {
     file.blob = new Blob(file.chunks, { type: file.type || 'application/octet-stream' });
     file.progress = 100;
     file.status = 'done';
-    render();
+    markFileComplete(packet.payload.fileId);
     return;
   }
 
@@ -449,7 +542,12 @@ async function setupConnection() {
       return;
     }
 
-    const message = JSON.parse(event.data);
+    let message;
+    try {
+      message = JSON.parse(event.data);
+    } catch {
+      return;
+    }
     if (message.expiresAt) {
       state.expiresAt = message.expiresAt;
     }
@@ -505,6 +603,7 @@ async function setupConnection() {
       window.setTimeout(() => {
         if (!state.sessionEnded) {
           setupConnection().catch(() => {
+            state.socket = null;
             state.statusMessage = 'Unable to reconnect. Refresh and scan again.';
             state.statusDanger = true;
             render();
@@ -522,9 +621,70 @@ async function setupConnection() {
   }, 5000);
 }
 
-function bindReceiverActions() {
-  const clipboardInput = document.getElementById('clipboard-input');
-  clipboardInput?.addEventListener('input', (event) => {
+function setupDelegatedListeners() {
+  document.getElementById('app').addEventListener('click', async (event) => {
+    const target = event.target;
+
+    if (target.matches('[data-download]')) {
+      const fileId = Number(target.getAttribute('data-download'));
+      const file = state.receivedFiles.find((entry) => entry.id === fileId);
+      if (!file?.blob) return;
+      const url = URL.createObjectURL(file.blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = safeBaseName(file.name);
+      anchor.click();
+      URL.revokeObjectURL(url);
+      await sendEncryptedPacket(encodeDownloadNoticePacket(fileId));
+      return;
+    }
+
+    if (target.id === 'clipboard-copy') {
+      try {
+        await navigator.clipboard.writeText(state.clipboardReceived);
+        state.clipboardCopyState = 'copied';
+      } catch {
+        state.clipboardCopyState = 'failed';
+      }
+      render();
+      window.setTimeout(() => {
+        state.clipboardCopyState = 'idle';
+        render();
+      }, 1500);
+      return;
+    }
+
+    if (target.id === 'send-back') {
+      document.getElementById('send-back-input')?.click();
+      return;
+    }
+
+    if (target.id === 'kill-button') {
+      state.socket?.send(JSON.stringify({ type: 'kill-session' }));
+      return;
+    }
+
+    if (target.id === 'zip-download') {
+      const files = state.receivedFiles.filter((file) => file.blob);
+      if (!files.length) return;
+    const zip = new JSZip();
+      files.forEach((file) => zip.file(safeBaseName(file.name), file.blob));
+      const blob = await zip.generateAsync({
+        type: 'blob',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 6 },
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `peek-${state.joinInfo.sessionId.slice(0, 6)}.zip`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+  });
+
+  document.getElementById('clipboard-input')?.addEventListener('input', (event) => {
     state.clipboardDraft = normalizeClipboardText(event.target.value);
     if (event.target.value !== state.clipboardDraft) {
       event.target.value = state.clipboardDraft;
@@ -546,71 +706,17 @@ function bindReceiverActions() {
     }, CLIPBOARD_DEBOUNCE_MS);
   });
 
-  document.getElementById('clipboard-copy')?.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(state.clipboardReceived);
-      state.clipboardCopyState = 'copied';
-    } catch {
-      state.clipboardCopyState = 'failed';
-    }
-    render();
-    window.setTimeout(() => {
-      state.clipboardCopyState = 'idle';
-      render();
-    }, 1500);
-  });
-
-  document.querySelectorAll('[data-download]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      const fileId = Number(button.getAttribute('data-download'));
-      const file = state.receivedFiles.find((entry) => entry.id === fileId);
-      if (!file?.blob) return;
-      const url = URL.createObjectURL(file.blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = safeBaseName(file.name);
-      anchor.click();
-      URL.revokeObjectURL(url);
-      await sendEncryptedPacket(encodeDownloadNoticePacket(fileId));
-    });
-  });
-
-  const sendBackButton = document.getElementById('send-back');
-  const sendBackInput = document.getElementById('send-back-input');
-  sendBackButton?.addEventListener('click', () => sendBackInput?.click());
-  sendBackInput?.addEventListener('change', async (event) => {
+  document.getElementById('send-back-input')?.addEventListener('change', async (event) => {
     const files = Array.from(event.target.files || []);
     if (files.length) {
       await sendFiles(files);
       event.target.value = '';
     }
   });
-
-  document.getElementById('kill-button')?.addEventListener('click', () => {
-    state.socket?.send(JSON.stringify({ type: 'kill-session' }));
-  });
-
-  document.getElementById('zip-download')?.addEventListener('click', async () => {
-    const files = state.receivedFiles.filter((file) => file.blob);
-    if (!files.length) return;
-    const zipModule = await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm');
-    const zip = new zipModule.default();
-    files.forEach((file) => zip.file(safeBaseName(file.name), file.blob));
-    const blob = await zip.generateAsync({
-      type: 'blob',
-      compression: 'DEFLATE',
-      compressionOptions: { level: 6 },
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `peek-${state.joinInfo.sessionId.slice(0, 6)}.zip`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  });
 }
 
 render();
+setupDelegatedListeners();
 
 if (state.joinInfo.mode === 'full-link') {
   setupConnection().catch(() => {

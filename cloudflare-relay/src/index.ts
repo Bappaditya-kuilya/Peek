@@ -1,5 +1,6 @@
 export interface Env {
 	PEEK_SESSION: DurableObjectNamespace;
+	INTERNAL_SYNC_SECRET: string;
 }
 
 interface ReceiverInfo {
@@ -228,7 +229,10 @@ export class PeekSession {
 					await target.fetch(
 						new Request("https://internal/internal/session-sync", {
 							method: "POST",
-							headers: { "Content-Type": "application/json" },
+							headers: {
+								"Content-Type": "application/json",
+								"X-Internal-Sync": this.env.INTERNAL_SYNC_SECRET,
+							},
 							body: JSON.stringify({ id: sessionId, token, expiresAt: session.expiresAt, fileCount: session.fileCount }),
 						})
 					);
@@ -242,12 +246,17 @@ export class PeekSession {
 				{ headers: { "Content-Type": "application/json" } }
 			);
 		} catch (e) {
-			return new Response(JSON.stringify({ error: String(e) }), { status: 500 });
+			console.error('createSession error:', e);
+			return new Response(JSON.stringify({ error: "Internal error" }), { status: 500 });
 		}
 	}
 
 	private async handleInternalSessionSync(request: Request): Promise<Response> {
 		try {
+			const syncSecret = request.headers.get("X-Internal-Sync");
+			if (!syncSecret || syncSecret !== this.env.INTERNAL_SYNC_SECRET) {
+				return new Response("Unauthorized", { status: 401 });
+			}
 			const body = (await request.json().catch(() => ({}))) as { id?: unknown; token?: unknown; expiresAt?: unknown; fileCount?: unknown };
 			if (typeof body.id !== "string" || !/^[a-f0-9]{16}$/i.test(body.id)) {
 				return new Response("Bad sync", { status: 400 });
@@ -273,7 +282,8 @@ export class PeekSession {
 			await this.state.storage.put(`session:${body.id}`, session);
 			return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
 		} catch (e) {
-			return new Response(JSON.stringify({ error: String(e) }), { status: 500 });
+			console.error('handleInternalSessionSync error:', e);
+			return new Response(JSON.stringify({ error: "Internal error" }), { status: 500 });
 		}
 	}
 
@@ -333,7 +343,8 @@ export class PeekSession {
 				{ headers: { "Content-Type": "application/json" } }
 			);
 		} catch (e) {
-			return new Response(JSON.stringify({ error: String(e) }), { status: 500 });
+			console.error('createView error:', e);
+			return new Response(JSON.stringify({ error: "Internal error" }), { status: 500 });
 		}
 	}
 
@@ -359,12 +370,14 @@ export class PeekSession {
 		}
 
 		if (entry.onceOnly) {
-			await this.state.storage.put(`view:${viewId}`, { ...entry, viewed: true });
+			// Delete first so a concurrent GET gets 404 instead of a second copy.
+			await this.state.storage.delete(`view:${viewId}`);
 		}
 
 		return new Response(entry.blob, {
 			headers: {
 				"Content-Type": "application/octet-stream",
+				"X-Content-Type-Options": "nosniff",
 				"X-Expires-At": String(entry.expiresAt),
 				"X-Filename": entry.filename,
 				"X-Mime-Type": entry.mimeType,
@@ -384,7 +397,11 @@ export class PeekSession {
 
 	private async validateToken(sessionId: string, token: string): Promise<boolean> {
 		const session = await this.getSession(sessionId);
-		return session?.token === token;
+		if (!session) return false;
+		const a = new TextEncoder().encode(session.token);
+		const b = new TextEncoder().encode(token);
+		if (a.length !== b.length) return false;
+		return crypto.subtle.timingSafeEqual(a, b);
 	}
 
 	private async killSessionInternal(sessionId: string): Promise<void> {
@@ -700,13 +717,13 @@ export class PeekSession {
 function corsHeaders(origin: string | null) {
 	const allowedOrigins = [
 		"https://peekapp.vercel.app",
-		"https://peek.dev",
 		"http://localhost:5173",
 		"http://127.0.0.1:5173",
 	];
-	const allowOrigin = origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+	const allowOrigin = origin && allowedOrigins.includes(origin) ? origin : null;
 	return {
-		"Access-Control-Allow-Origin": allowOrigin,
+		"X-Content-Type-Options": "nosniff",
+		...(allowOrigin ? { "Access-Control-Allow-Origin": allowOrigin } : {}),
 		"Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
 		"Access-Control-Allow-Headers": "Content-Type, Authorization, X-Expires-In, X-Filename, X-Mime-Type, X-Once-Only",
 		"Access-Control-Expose-Headers": "X-Expires-At, X-Filename, X-Mime-Type",
