@@ -1,6 +1,5 @@
 export interface Env {
 	PEEK_SESSION: DurableObjectNamespace;
-	INTERNAL_SYNC_SECRET: string;
 }
 
 interface ReceiverInfo {
@@ -145,11 +144,6 @@ export class PeekSession {
 			addCorsHeaders(response.headers, origin);
 			return response;
 		}
-		if (request.method === "POST" && url2.pathname === "/internal/session-sync") {
-			const response = await this.handleInternalSessionSync(request);
-			addCorsHeaders(response.headers, origin);
-			return response;
-		}
 		if (request.method === "DELETE" && url2.pathname.startsWith("/session/")) {
 			const response = await this.killSession(request);
 			addCorsHeaders(response.headers, origin);
@@ -199,14 +193,18 @@ export class PeekSession {
 				});
 			}
 
-			const body = (await request.json().catch(() => ({}))) as { fileCount?: number };
-			const fileCount = Math.max(0, Math.min(500, Number(body?.fileCount || 0)));
+		const body = (await request.json().catch(() => ({}))) as { fileCount?: number };
+		const fileCount = Math.max(0, Math.min(500, Number(body?.fileCount || 0)));
 
-			const sessionIdBytes = new Uint8Array(8);
-			crypto.getRandomValues(sessionIdBytes);
-			const sessionId = Array.from(sessionIdBytes, b => b.toString(16).padStart(2, '0')).join('');
+		const sessionId = request.headers.get("X-Session-Id");
+		if (!sessionId || !/^[a-f0-9]{16}$/i.test(sessionId)) {
+			return new Response(JSON.stringify({ error: "Missing session ID" }), {
+				status: 400,
+				headers: { "Content-Type": "application/json" },
+			});
+		}
 
-			const tokenBytes = new Uint8Array(32);
+		const tokenBytes = new Uint8Array(32);
 			crypto.getRandomValues(tokenBytes);
 			const token = Array.from(tokenBytes, b => b.toString(16).padStart(2, '0')).join('');
 
@@ -219,70 +217,15 @@ export class PeekSession {
 				fileCount,
 			};
 
-			await this.state.storage.put(`session:${sessionId}`, session);
-			await this.state.storage.put("rate:session_create", { count: count + 1, windowStart });
+		await this.state.storage.put(`session:${sessionId}`, session);
+		await this.state.storage.put("rate:session_create", { count: count + 1, windowStart });
 
-			// Safe: sessions are public-create, so a same-shaped internal sync carries no new capability for attackers.
-			if ((this.env as Env | undefined)?.PEEK_SESSION) {
-				try {
-					const target = this.env.PEEK_SESSION.get(this.env.PEEK_SESSION.idFromName(sessionId));
-					await target.fetch(
-						new Request("https://internal/internal/session-sync", {
-							method: "POST",
-							headers: {
-								"Content-Type": "application/json",
-								"X-Internal-Sync": this.env.INTERNAL_SYNC_SECRET,
-							},
-							body: JSON.stringify({ id: sessionId, token, expiresAt: session.expiresAt, fileCount: session.fileCount }),
-						})
-					);
-				} catch {
-					/* best-effort: create still succeeds; join will 4001 if sync missed */
-				}
-			}
-
-			return new Response(
+		return new Response(
 				JSON.stringify({ sessionId, token, expiresAt: session.expiresAt, fileCount: session.fileCount }),
 				{ headers: { "Content-Type": "application/json" } }
 			);
 		} catch (e) {
 			console.error('createSession error:', e);
-			return new Response(JSON.stringify({ error: "Internal error" }), { status: 500 });
-		}
-	}
-
-	private async handleInternalSessionSync(request: Request): Promise<Response> {
-		try {
-			const syncSecret = request.headers.get("X-Internal-Sync");
-			if (!syncSecret || syncSecret !== this.env.INTERNAL_SYNC_SECRET) {
-				return new Response("Unauthorized", { status: 401 });
-			}
-			const body = (await request.json().catch(() => ({}))) as { id?: unknown; token?: unknown; expiresAt?: unknown; fileCount?: unknown };
-			if (typeof body.id !== "string" || !/^[a-f0-9]{16}$/i.test(body.id)) {
-				return new Response("Bad sync", { status: 400 });
-			}
-			if (typeof body.token !== "string" || !/^[a-f0-9]{32,128}$/i.test(body.token)) {
-				return new Response("Bad sync", { status: 400 });
-			}
-			const owner = this.state.id?.name;
-			if (typeof owner === "string" && owner !== body.id) {
-				return new Response("Bad sync", { status: 400 });
-			}
-			if (await this.getSession(body.id)) {
-				return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
-			}
-			const session: Session = {
-				id: body.id,
-				token: body.token,
-				expiresAt: typeof body.expiresAt === "number" ? body.expiresAt : Date.now() + 60 * 60 * 1000,
-				initiatorJoinedAt: null,
-				receivers: new Map(),
-				fileCount: Math.max(0, Math.min(500, Number(body.fileCount || 0))),
-			};
-			await this.state.storage.put(`session:${body.id}`, session);
-			return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
-		} catch (e) {
-			console.error('handleInternalSessionSync error:', e);
 			return new Response(JSON.stringify({ error: "Internal error" }), { status: 500 });
 		}
 	}
@@ -760,6 +703,14 @@ export default {
 				return new Response("Missing or invalid sessionId", { status: 400 });
 			}
 			id = env.PEEK_SESSION.idFromName(sessionId);
+		} else if (request.method === "POST" && url.pathname === "/session") {
+			const sessionIdBytes = new Uint8Array(8);
+			crypto.getRandomValues(sessionIdBytes);
+			const sessionId = Array.from(sessionIdBytes, b => b.toString(16).padStart(2, '0')).join('');
+			id = env.PEEK_SESSION.idFromName(sessionId);
+			const headers = new Headers(request.headers);
+			headers.set("X-Session-Id", sessionId);
+			request = new Request(request, { headers });
 		} else {
 			id = env.PEEK_SESSION.idFromName("global");
 		}
