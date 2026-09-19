@@ -72,6 +72,8 @@ describe('sender viewer-pending → sender-key-grant handshake', () => {
     expect(typeof grant.wrappedKeyB64).toBe('string');
     expect(result.current.pendingViewers.length).toBe(0);
   });
+
+  
 });
 
 describe('receiver receiver-join-request → key-grant handshake', () => {

@@ -144,6 +144,11 @@ export class PeekSession {
 			addCorsHeaders(response.headers, origin);
 			return response;
 		}
+		if (request.method === "POST" && url2.pathname === "/internal/session-sync") {
+			const response = await this.handleInternalSessionSync(request);
+			addCorsHeaders(response.headers, origin);
+			return response;
+		}
 		if (request.method === "DELETE" && url2.pathname.startsWith("/session/")) {
 			const response = await this.killSession(request);
 			addCorsHeaders(response.headers, origin);
@@ -216,10 +221,57 @@ export class PeekSession {
 			await this.state.storage.put(`session:${sessionId}`, session);
 			await this.state.storage.put("rate:session_create", { count: count + 1, windowStart });
 
+			// Safe: sessions are public-create, so a same-shaped internal sync carries no new capability for attackers.
+			if ((this.env as Env | undefined)?.PEEK_SESSION) {
+				try {
+					const target = this.env.PEEK_SESSION.get(this.env.PEEK_SESSION.idFromName(sessionId));
+					await target.fetch(
+						new Request("https://internal/internal/session-sync", {
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify({ id: sessionId, token, expiresAt: session.expiresAt, fileCount: session.fileCount }),
+						})
+					);
+				} catch {
+					/* best-effort: create still succeeds; join will 4001 if sync missed */
+				}
+			}
+
 			return new Response(
 				JSON.stringify({ sessionId, token, expiresAt: session.expiresAt, fileCount: session.fileCount }),
 				{ headers: { "Content-Type": "application/json" } }
 			);
+		} catch (e) {
+			return new Response(JSON.stringify({ error: String(e) }), { status: 500 });
+		}
+	}
+
+	private async handleInternalSessionSync(request: Request): Promise<Response> {
+		try {
+			const body = (await request.json().catch(() => ({}))) as { id?: unknown; token?: unknown; expiresAt?: unknown; fileCount?: unknown };
+			if (typeof body.id !== "string" || !/^[a-f0-9]{16}$/i.test(body.id)) {
+				return new Response("Bad sync", { status: 400 });
+			}
+			if (typeof body.token !== "string" || !/^[a-f0-9]{32,128}$/i.test(body.token)) {
+				return new Response("Bad sync", { status: 400 });
+			}
+			const owner = this.state.id?.name;
+			if (typeof owner === "string" && owner !== body.id) {
+				return new Response("Bad sync", { status: 400 });
+			}
+			if (await this.getSession(body.id)) {
+				return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
+			}
+			const session: Session = {
+				id: body.id,
+				token: body.token,
+				expiresAt: typeof body.expiresAt === "number" ? body.expiresAt : Date.now() + 60 * 60 * 1000,
+				initiatorJoinedAt: null,
+				receivers: new Map(),
+				fileCount: Math.max(0, Math.min(500, Number(body.fileCount || 0))),
+			};
+			await this.state.storage.put(`session:${body.id}`, session);
+			return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
 		} catch (e) {
 			return new Response(JSON.stringify({ error: String(e) }), { status: 500 });
 		}

@@ -15,8 +15,10 @@ import { getTransportLabel } from '../../shared/transport.js';
 
 export function SenderActiveView({
   activity,
+  addMoreInputRef,
   clipboard,
   connectionTrouble,
+  onAddMore,
   onApproveViewer,
   onDownload,
   onKill,
@@ -87,7 +89,14 @@ export function SenderActiveView({
                 <div className="panel-label">Your transfer set</div>
                 <h2 className="section-title">Files staged for this session</h2>
               </div>
-              <div className="panel-label">Shared progress {sharedProgress}%</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div className="panel-label">Shared progress {sharedProgress}%</div>
+                {onAddMore ? (
+                  <button type="button" className="compact-button" onClick={() => addMoreInputRef?.current?.click()}>
+                    Add files
+                  </button>
+                ) : null}
+              </div>
             </div>
             <ProgressBar value={sharedProgress} />
             <div className="file-list">
@@ -159,6 +168,7 @@ export function SenderActiveView({
       </aside>
 
       <input ref={sendBackInputRef} className="hidden-input" type="file" multiple onChange={onSendBack} />
+      <input ref={addMoreInputRef} className="hidden-input" type="file" multiple onChange={onAddMore} />
     </div>
   );
 }
