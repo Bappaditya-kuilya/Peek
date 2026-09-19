@@ -12,4 +12,3 @@ PeekSession = { type = "durable-object", storage = "sqlite" }
 
 [vars]
 ENVIRONMENT = "development"
-INTERNAL_SYNC_SECRET = "dev-only-placeholder-replace-with-wrangler-secret-put"
