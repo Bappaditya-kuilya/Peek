@@ -49,6 +49,7 @@ function agoLabel(timestamp) {
 
 export function SenderScreen() {
   const fileInputRef = useRef(null);
+  const addMoreInputRef = useRef(null);
   const sendBackInputRef = useRef(null);
   const fallbackSocketRef = useRef(null);
   const fallbackTimeoutRef = useRef(null);
@@ -111,7 +112,15 @@ export function SenderScreen() {
       setStatusMessage('Some incoming data could not be read. The connection may be unstable.');
     },
     onManifest(files) {
-      setReceivedFiles(files.map((file) => ({ ...file, progress: 0, status: 'queued' })));
+      setReceivedFiles((current) => {
+        const prevById = new Map(current.map((item) => [item.id, item]));
+        return files.map((file) => {
+          const prev = prevById.get(file.id);
+          if (prev?.blob || prev?.status === 'done') return prev;
+          if (file.complete) return { ...file, progress: 100, status: 'done' };
+          return { ...file, progress: 0, status: 'queued' };
+        });
+      });
     },
     onReceiveComplete(file) {
       setReceivedFiles((current) =>
@@ -257,6 +266,32 @@ export function SenderScreen() {
     setSharedFiles((current) => current.filter((file) => file.id !== fileId));
   }
 
+  async function handleAddMoreFiles(event) {
+    const list = Array.from(event.target.files || []);
+    if (!list.length) return;
+    const startIndex = selectedFilesRef.current.length;
+    const records = list.map((file) => {
+      const id = nextFileIdRef.current;
+      nextFileIdRef.current += 1;
+      return createLocalFileRecord(file, id);
+    });
+    const updated = [...selectedFilesRef.current, ...records];
+    setSelectedFiles(updated);
+    setSharedFiles((current) => [...current, ...records.map(stripFilePayload)]);
+    event.target.value = '';
+    if (transferStartedRef.current && transportRef.current) {
+      try {
+        await transfer.sendFiles(
+          updated.map((entry) => entry.file),
+          transportRef.current,
+          startIndex
+        );
+      } catch {
+        setStatusMessage('Could not send the new files. The connection may be unstable.');
+      }
+    }
+  }
+
   function triggerFilePicker() {
     fileInputRef.current?.click();
   }
@@ -307,8 +342,10 @@ export function SenderScreen() {
         {screen === SCREEN_ACTIVE && session ? (
           <SenderActiveView
             activity={activity}
+            addMoreInputRef={addMoreInputRef}
             clipboard={clipboard}
             connectionTrouble={connectionTrouble}
+            onAddMore={handleAddMoreFiles}
             onApproveViewer={(receiverId) => senderCoordination?.approveViewer(receiverId)}
             onDownload={downloadFile}
             onKill={handleKillSession}

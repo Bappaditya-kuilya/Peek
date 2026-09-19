@@ -34,16 +34,7 @@ export function getRelayHttpUrl() {
 }
 
 export function getRelayWsUrl(sessionId = '') {
-  if (import.meta.env.VITE_RELAY_WS_URL) {
-    return import.meta.env.VITE_RELAY_WS_URL;
-  }
-
-  if (isLocalHost()) {
-    const base = getLocalRelayWsOrigin(window.location.protocol);
-    return sessionId ? `${base}?sessionId=${sessionId}` : base;
-  }
-
-  const base = PRODUCTION_WS_URL;
+  const base = (import.meta.env.VITE_RELAY_WS_URL || (isLocalHost() ? getLocalRelayWsOrigin(window.location.protocol) : PRODUCTION_WS_URL)).replace(/\/+$/, '');
   return sessionId ? `${base}?sessionId=${sessionId}` : base;
 }
 

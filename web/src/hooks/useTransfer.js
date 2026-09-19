@@ -58,12 +58,12 @@ export function useTransfer({
     await sendEncryptedPacket(transport, encodeManifestPacket(files));
   }
 
-  async function sendFiles(files, transport) {
+  async function sendFiles(files, transport, startIndex = 0) {
     sendContextRef.current = { files, transport };
     failedChunksRef.current = [];
     await sendManifest(files, transport);
 
-    for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
+    for (let fileIndex = startIndex; fileIndex < files.length; fileIndex += 1) {
       const file = files[fileIndex];
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE) || 1;
 
@@ -148,14 +148,22 @@ export function useTransfer({
     }
 
     if (packet.type === 'manifest') {
-      const files = packet.payload.files.map((file) => ({
-        ...file,
-        chunks: new Array(Math.min(file.totalChunks, MAX_CHUNKS_PER_FILE)).fill(null),
-        bytesReceived: 0,
-        complete: false,
-      }));
+      const files = packet.payload.files.map((file) => {
+        const prev = incomingFiles.get(file.id);
+        if (prev?.complete) return prev;
+        if (prev && prev.totalChunks === file.totalChunks) {
+          // Second manifest while a transfer is in flight (user added files):
+          // keep received bytes instead of resetting, or the file stalls.
+          return { ...file, chunks: prev.chunks, bytesReceived: prev.bytesReceived, complete: false };
+        }
+        return {
+          ...file,
+          chunks: new Array(Math.min(file.totalChunks, MAX_CHUNKS_PER_FILE)).fill(null),
+          bytesReceived: 0,
+          complete: false,
+        };
+      });
 
-      incomingFiles.clear();
       files.forEach((file) => incomingFiles.set(file.id, file));
       onManifest?.(files);
       return;
@@ -164,6 +172,9 @@ export function useTransfer({
     if (packet.type === 'chunk') {
       const file = incomingFiles.get(packet.payload.fileId);
       if (!file) {
+        return;
+      }
+      if (file.chunks[packet.payload.chunkIndex]) {
         return;
       }
 
