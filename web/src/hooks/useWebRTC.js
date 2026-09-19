@@ -110,6 +110,10 @@ export function useWebRTC({
 
   function setupDataChannelHandlers(channel) {
     channel.binaryType = 'arraybuffer';
+    // Chain, don't overwrite: screens assign channel.onmessage in onDataChannel
+    // (before this runs on the receiver path). Last-write-wins silently dropped
+    // all binary file packets there — strings go to device-id, bytes go on.
+    const previousOnMessage = channel.onmessage;
     channel.onmessage = (event) => {
       if (typeof event.data === 'string') {
         try {
@@ -120,6 +124,10 @@ export function useWebRTC({
         } catch {
           // ignore non-JSON messages
         }
+        return;
+      }
+      if (typeof previousOnMessage === 'function') {
+        previousOnMessage.call(channel, event);
       }
     };
   }

@@ -111,9 +111,14 @@ describe('receiver receiver-join-request → key-grant handshake', () => {
 
     await act(async () => {
       FakeSocket.last.fireOpen();
-      await new Promise((r) => setTimeout(r, 800));
     });
-    const joinSent = FakeSocket.last.sent.map((s) => JSON.parse(s)).find((m) => m.type === 'receiver-join-request');
+    // Poll, don't sleep: CI runners are slower than laptops and a fixed
+    // 800ms wait flaked there (join arrives late, not never).
+    let joinSent;
+    await vi.waitFor(() => {
+      joinSent = FakeSocket.last.sent.map((s) => JSON.parse(s)).find((m) => m.type === 'receiver-join-request');
+      expect(joinSent).toBeTruthy();
+    }, { timeout: 5000 });
     expect(joinSent).toBeTruthy();
     expect(joinSent.sessionId).toBe(sessionId);
     expect(joinSent.token).toBe(token);
@@ -124,10 +129,12 @@ describe('receiver receiver-join-request → key-grant handshake', () => {
     const wrappedKeyB64 = await wrapSessionKeyForViewer(joinSent.pubKeyJwk, sessionKey);
     await act(async () => {
       FakeSocket.last.fireMessage({ type: 'key-grant', wrappedKeyB64 });
-      await new Promise((r) => setTimeout(r, 0));
     });
-    expect(joined).toBe(true);
-    expect(grantedKey).toBeTruthy();
+    // RSA-OAEP unwrap is slow on loaded runners — poll, don't sleep.
+    await vi.waitFor(() => {
+      expect(joined).toBe(true);
+      expect(grantedKey).toBeTruthy();
+    }, { timeout: 8000 });
     expect(await exportKeyToBase64(grantedKey)).toBe(await exportKeyToBase64(sessionKey));
   });
 });
