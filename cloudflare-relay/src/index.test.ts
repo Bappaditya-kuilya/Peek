@@ -8,6 +8,12 @@ describe('PeekSession Durable Object', () => {
 	const newId = () => peekSessionNamespace.idFromName(`t${nameSeq++}`);
 	let peekSessionNamespace: typeof env.PEEK_SESSION;
 
+	// ponytail: DO createSession now requires X-Session-Id (Worker generates it
+	// in prod); tests hit the DO directly so each request mints one here.
+	const sid = () =>
+		Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('');
+	const sessionHeaders = () => ({ 'Content-Type': 'application/json', 'X-Session-Id': sid() });
+
 	const connect = async (stub: any, join: object) => {
 		const response = await stub.fetch('https://example.com/', { headers: { Upgrade: 'websocket' } });
 		const ws = response.webSocket;
@@ -49,7 +55,7 @@ describe('PeekSession Durable Object', () => {
 
 			const response = await stub.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 3 }),
 			});
 
@@ -67,7 +73,7 @@ describe('PeekSession Durable Object', () => {
 
 			const response = await stub.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 1000 }),
 			});
 
@@ -82,7 +88,7 @@ describe('PeekSession Durable Object', () => {
 
 			const createResponse = await stub.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 1 }),
 			});
 			const { sessionId, token } = await createResponse.json();
@@ -113,7 +119,7 @@ describe('PeekSession Durable Object', () => {
 
 			const createResponse = await stub.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 1 }),
 			});
 			const { sessionId, token } = await createResponse.json();
@@ -174,7 +180,7 @@ describe('PeekSession Durable Object', () => {
 
 			const createResponse = await stub.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 1 }),
 			});
 			const { sessionId, token } = await createResponse.json();
@@ -200,7 +206,7 @@ describe('PeekSession Durable Object', () => {
 
 			const createResponse = await stub.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 1 }),
 			});
 			const { sessionId, token } = await createResponse.json();
@@ -271,7 +277,7 @@ describe('PeekSession Durable Object', () => {
 		const createSession = async (stub: any) => {
 			const createResponse = await stub.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 1 }),
 			});
 			return await createResponse.json() as { sessionId: string; token: string };
@@ -458,7 +464,7 @@ describe('PeekSession Durable Object', () => {
 
 			const createResponse = await stub.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 1 }),
 			});
 			const { sessionId, token } = await createResponse.json();
@@ -479,7 +485,7 @@ describe('PeekSession Durable Object', () => {
 
 			const createResponse = await stub.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 1 }),
 			});
 			const { sessionId, token } = await createResponse.json();
@@ -500,7 +506,7 @@ describe('PeekSession Durable Object', () => {
 
 			const createResponse = await stub.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 1 }),
 			});
 			const { sessionId, token } = await createResponse.json();
@@ -526,7 +532,7 @@ describe('PeekSession Durable Object', () => {
 			for (let i = 0; i < 10; i++) {
 				const response = await stub.fetch('https://example.com/session', {
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers: sessionHeaders(),
 					body: JSON.stringify({ fileCount: 1 }),
 				});
 				expect(response.status).toBe(200);
@@ -534,7 +540,7 @@ describe('PeekSession Durable Object', () => {
 
 			const response = await stub.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 1 }),
 			});
 
@@ -551,7 +557,7 @@ describe('PeekSession Durable Object', () => {
 
 			const response = await stub.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 1 }),
 			});
 
@@ -564,7 +570,7 @@ describe('PeekSession Durable Object', () => {
 
 			const createResponse = await stub.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 1 }),
 			});
 			const { sessionId, token } = await createResponse.json();
@@ -592,7 +598,7 @@ describe('PeekSession Durable Object', () => {
 
 			const createResponse = await stub.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 1 }),
 			});
 			const { sessionId, token } = await createResponse.json();
@@ -625,7 +631,7 @@ describe('PeekSession Durable Object', () => {
 
 			const createResponse = await stub.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 1 }),
 			});
 			const { sessionId, token } = await createResponse.json();
@@ -659,7 +665,7 @@ describe('PeekSession Durable Object', () => {
 
 			const createResponse = await stub.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 1 }),
 			});
 			const { sessionId, token, expiresAt } = await createResponse.json();
@@ -670,7 +676,7 @@ describe('PeekSession Durable Object', () => {
 
 			const killResponse = await stub.fetch(`https://example.com/session/${sessionId}`, {
 				method: 'DELETE',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ token }),
 			});
 
@@ -685,7 +691,7 @@ describe('PeekSession Durable Object', () => {
 
 			const createResponse = await stub.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 1 }),
 			});
 			const { sessionId, token } = await createResponse.json();
@@ -700,7 +706,7 @@ describe('PeekSession Durable Object', () => {
 			// Any session lookup (here: kill) now runs the getSession expiry path.
 			const killResponse = await stub.fetch(`https://example.com/session/${sessionId}`, {
 				method: 'DELETE',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ token }),
 			});
 			expect(killResponse.status).toBe(403);
@@ -717,14 +723,14 @@ describe('PeekSession Durable Object', () => {
 
 			const createResponse = await stub.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 1 }),
 			});
 			const { sessionId, token } = await createResponse.json();
 
 			const killResponse = await stub.fetch(`https://example.com/session/${sessionId}`, {
 				method: 'DELETE',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ token }),
 			});
 
@@ -739,14 +745,14 @@ describe('PeekSession Durable Object', () => {
 
 			const createResponse = await stub.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 1 }),
 			});
 			const { sessionId } = await createResponse.json();
 
 			const killResponse = await stub.fetch(`https://example.com/session/${sessionId}`, {
 				method: 'DELETE',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ token: 'invalid' }),
 			});
 
@@ -761,14 +767,14 @@ describe('PeekSession Durable Object', () => {
 
 			const create1 = await stub1.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 2 }),
 			});
 			const { sessionId: sessionId1, token: token1 } = await create1.json();
 
 			const create2 = await stub2.fetch('https://example.com/session', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: sessionHeaders(),
 				body: JSON.stringify({ fileCount: 3 }),
 			});
 			const { sessionId: sessionId2, token: token2 } = await create2.json();
