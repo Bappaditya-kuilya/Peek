@@ -422,13 +422,19 @@ export class PeekSession {
 			case "webrtc-offer":
 			case "webrtc-answer":
 			case "webrtc-candidate":
-			case "clipboard-push":
 			case "view-share-push":
 				const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
 				if (!attachment || !attachment.sessionId) return;
 				if (this.checkWsRateLimit(ws, attachment.sessionId, attachment.role)) return;
 				await this.relaySignaling(ws, message);
 				break;
+			case "clipboard-push": {
+				const clipAttachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+				if (!clipAttachment || !clipAttachment.sessionId) return;
+				if (this.checkWsRateLimit(ws, clipAttachment.sessionId, clipAttachment.role)) return;
+				await this.relayClipboard(ws, message);
+				break;
+			}
 			default:
 				break;
 		}
@@ -603,6 +609,31 @@ export class PeekSession {
 		const targetWs = this.getReceiverWebSocket(attachment.sessionId, targetReceiverId);
 		if (targetWs && targetWs.readyState === WebSocket.OPEN) {
 			targetWs.send(JSON.stringify(message));
+		}
+	}
+
+	async relayClipboard(ws: WebSocket, message: any): Promise<void> {
+		const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+		if (!attachment || !attachment.sessionId) return;
+		if (typeof message?.payload !== "string") return;
+
+		const session = await this.getSession(attachment.sessionId);
+		if (!session) return;
+		const payload = JSON.stringify({ type: "clipboard-push", payload: message.payload });
+
+		if (attachment.role === "initiator") {
+			for (const [receiverId, receiver] of session.receivers) {
+				if (receiver.status === "pending") continue;
+				const receiverWs = this.getReceiverWebSocket(attachment.sessionId, receiverId);
+				if (receiverWs && receiverWs.readyState === WebSocket.OPEN) {
+					receiverWs.send(payload);
+				}
+			}
+		} else if (attachment.role === "receiver") {
+			const initiatorWs = this.getInitiatorWebSocket(attachment.sessionId);
+			if (initiatorWs && initiatorWs.readyState === WebSocket.OPEN) {
+				initiatorWs.send(payload);
+			}
 		}
 	}
 
