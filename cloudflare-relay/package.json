@@ -13,7 +13,7 @@
   "license": "ISC",
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
-    "@cloudflare/workers-types": "^5.20260717.1",
+    "@cloudflare/workers-types": "^5.20260921.1",
     "miniflare": "^5.20260918.0-alpha",
     "typescript": "^5.9.2",
     "vitest": "^4.1.11",
